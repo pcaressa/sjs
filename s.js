@@ -121,7 +121,7 @@ let sjs_compile_array = function(tl, rt, endchr)
     // An empty array is created and elements are added to it
     // [v1, ..., vk] is implemented as [] v1 ARRADD ... vk ARRADD
     rt.code.push(rt.PUSH);
-    rt.code.push([]);
+    rt.code.push({value: [], type: "object"});
     let token = tl[0];
     while (token.s != endchr) {
         token = sjs_compile_expression(tl, rt);
@@ -158,18 +158,18 @@ let sjs_compile_operand = function(token, tl, rt)
     } else
     if (token.t == "name") {
         rt.code.push(rt.VAR);
-        rt.code.push({value: token.s, type: "symbol"});
+        rt.code.push(token.s);
     } else
     if (token.s == "{") {   // Object
         // An empty object is created and attributes are added to it
         // {n1:v1, ..., nk:vk} is implemented as {} n1 v1 OBJADD ... nk vk OBJADD
         rt.code.push(rt.PUSH);
-        rt.code.push({});
-        token = tl.shift(); // name or '}'
+        rt.code.push({value: {}, type: "object"});
+        token = tl.shift();     // expect name or '}'
         while (token.s != "}") {
             sjs_error(token.t != "name", "'}' or 'name:value' expected", token);                
             rt.code.push(rt.PUSH);
-            rt.code.push(token.s);
+            rt.code.push(token.s);  // bare string, OBJADD expect this
             token = sjs_compile_expression(tl, rt);
             rt.code.push(rt.OBJADD);    // obj name value OBJADD -> obj[name] = value and obj on the stack
             // Token should be ',' or '}'
@@ -207,13 +207,13 @@ let sjs_compile_operand = function(token, tl, rt)
         rt.code.push(parameters);
         sjs_error(tl[0].s != "{", "'{' expected", token);
         rt.code.push(sjs_compile(tl).code);
-    } else
-    if (token.s == "(") {    // Subexpression
+    } else {
+        sjs_error(token.s != "(", "Syntax error: " + token.s, token);
+        // Subexpression
         rt = sjs_compile_expression(tl, rt);
         sjs_error(tl[0].s != ")", "')' expected", tl[0]);
-    } else {
-        sjs_error(true, "Syntax error: " + token.s, token);
     }
+    return token;
 }
 
 /** Compiles an expression into rt.code parsing it from the token list tl,
@@ -459,8 +459,9 @@ let sjs_compile = function(tl)
                 if (token.s == "=") {
                     token = sjs_compile_expression(tl, rt);
                 } else {
+                    // variable default value
                     rt.code.push(rt.PUSH);
-                    rt.code.push(undefined);    // variable default value
+                    rt.code.push({value: undefined, type: "undefined"});
                 }
                 rt.code.push(rt.LET);
             } while (token.s == ",");
@@ -499,25 +500,30 @@ let sjs_rtlib = function(rt) {
     
     /// APPLY() pop a, pop f, apply function f to list x.
     rt.APPLY = function() {
-        let a = rt.stack.pop();
+        let a = rt.stack.pop().value;
         let f = rt.stack.pop();
         
-        console.log(f + " " + typeof(f))
-        
-        if (f.call == undefined) {
-            sjs_error(f.callable == undefined, "Apply arguments only to functions");
+        sjs_error(typeof(f) != "function", "Apply arguments only to functions");
+        if (f.builtin == undefined) {
+            // Call actual JS function
+            
+            DEVO APPLICARE LA FUNZIONE CORRETTAMENTE: ORA GLI DO COME
+            PARAMETRO LA LISTA DEI PARAMETRI ATTUALI; INVECE DEVO
+            DARGLI I SINGOLI PARAMETRI.
+            
+            rt.stack.push(f(a));
         } else {
-            // Actual JS function
-            rt.push(f(a));
+            // esegue la funzione definita dall'utente!!!
+            alert("TODO");
         }
     };
     
     /** ARRADD() pop v, pop a, { a[a.length] = v; ++ a.length; } push a */
     rt.ARRADD = function() {
-        let v = rt.stack.pop();
-        let a = rt.stack.pop();
+        let v = rt.stack.pop().value;
+        let a = rt.stack.pop().value;
         a.push(v);
-        rt.stack.push(a);
+        rt.stack.push({value: a, type: "object"});
     };
     
     /** CLOSURE() parse x, parse y, creates a closure with parameters the
@@ -578,9 +584,9 @@ let sjs_rtlib = function(rt) {
     rt.VAR = function() {
         let s = rt.code[rt.ic];
         ++ rt.ic;
-        for (let e = rt.env; e != null; e = e.prev) {
-            if (e.s != undefined) {
-                rt.stack.push(e.s.value);
+        for (let e = rt.env; e != null; e = e.outer) {
+            if (e[s] != undefined) {
+                rt.stack.push(e[s].value);
                 return;
             }
         }
@@ -593,15 +599,35 @@ let sjs_rtlib = function(rt) {
 /** sjs_run(rt) accetta un oggetto di tipo runtime, prodotto da sjs_compile,
     e lo esegue. Durante l'esecuzione utilizza uno stack per i valori, un
     ambiente per le associazioni delle variabili. */
-function sjs_run(rt)
+let sjs_run = function(rt)
 {
     // rt.env.prev = environment at outer scope.
-    rt.env = {console: console, alert: alert, Number: Number, _prev: null};
+    rt.env = {console: {value: {log: {value: console.log, type: "function", builtin: true}}, type: "object"},
+              alert: {value: alert, type: "function", builtin: true},
+              Number: {value: Number, type: "object"},
+              outer: null};
     rt.ic = 0;
     rt.stack = [];
     rt.dump = [];
     
+    let stackdump = function() {
+        let s = "[ ";
+        for (let i = 0; i < rt.stack.length; ++ i) {
+            s += rt.stack[i] + " ";
+        }
+        console.log(s + "]");
+    };
+    
+    let codedump = function() {
+        let s = "[ ";
+        for (let i = rt.ic; i < rt.code.length; ++ i) {
+            s += rt.code[i] + " ";
+        }
+        console.log(s + "]");
+    };
+    
     while (rt.ic < rt.code.length) {
+        stackdump();
         let ic = rt.ic;
         ++ rt.ic;
         console.log("[" + ic + "] " + rt.code[ic])
