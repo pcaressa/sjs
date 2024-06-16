@@ -54,6 +54,64 @@ I tipi di dato predefiniti sono:
 
 ## The virtual machine
 
+### Variables
+
+The runtime environment object contains an attribute `env` which is used to store symbols defined in the current scope. Each symbol defined by a `let v = x` is stored as an object `env.v = {value: x, type: t}`.
+
+When a variable's name appears inside an expression, it is compiled as
+
+    REF v
+
+At runtime, the `REF` instruction parses the name `v` and looks for it in the environment: then the object `{ref: r, at: []}` is pushed on the stack, where `r` is a reference to the `{value: x, type: t}` object in `env.v`. If the value of the object is needed, then `r.value` is pushed on the stack, else if the reference is needed, the reference is used.
+
+For example consider:
+
+    x[1] = x[0];
+
+This is compiled as
+
+    REF "x"
+    PUSH 1
+    DEREF
+    REF "x"
+    PUSH 0
+    DEREF
+    SET
+
+The `REF` instruction looks for the attribute `x` inside `rt.env` and push the reference `{ref: {value: v, type: t}, at: []}` on the stack. Next `PUSH` pushes the object `{ref: {value: 1, type: "number"}, at: []}` and the `DEREF` instruction modifies the reference to `{ref: {value: v, type: t}, at: [1]}`. The second sequence `REF-PUSH-DEREF` does the same leaving `{ref: {value: v, type: t}, at: [0]}` on the stack.
+
+Finally the `SET` operator pops two references and assigns the value of the topmost to the one below, in this case the final result will be that the attribute `1` of the object `v` will be set to the value of `v[0]`.
+
+This device is not efficient, since operators that just need the value of a variable will always use the `value` attribute discarding the rest, but it is simple.
+
+
+env = {a: {value: [1,2,3], type: "object"}}
+
+    REF a
+    PUSH 1
+    DEREF
+    REF a
+    PUSH 0
+    DEREF
+    SET
+
+REF a   s: (r)  dove r = {ref:{value: [1,2,3], type: "object"}, at:[]}
+PUSH 1  s: (r {ref:{value:1, type: "number"}, at:[]}
+DEREF   s: (s)  dove s = {ref:{value: [1,2,3], type: "object"}, at:[1]})
+REF a   s: (s r)  dove r = {ref:{value: [1,2,3], type: "object"}, at:[]}
+PUSH 1  s: (s r {ref:{value:1, type: "number"}, at:[]}
+DEREF   s: (s t)  dove s = {ref:{value: [1,2,3], type: "object"}, at:[0]})
+SET     pone s.ref.value[s.at[0]] = t.ref.value[t.at[0]]
+
+
+### References
+
+When a variable is mentioned in a JavaScript expression, an object is pushed on the stack of the form:
+
+    { ref: v, at: s }
+
+where `v` is the 
+
 ### Objects
 
 The SJS runtime deals only with objects: that means that even numbers are created as objects. However the standard internals of the JS environment are not implemented in detail.
@@ -77,7 +135,7 @@ For example,
 
     x = x + 1;
 
-is compiled to
+is compiled as
 
     VAR "x"
     VAR "x"

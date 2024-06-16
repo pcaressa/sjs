@@ -39,13 +39,16 @@
 <button type="button" onclick="parse()">Parse</button>
 <button type="button" onclick="compile()">Compile</button>
 <button type="button" onclick="run()">Run</button>
+<button type="button" onclick="debug()">Debug</button>
+<button type="button" onclick="popup()">Popup</button>
 <input type="file" accept="js" onchange="load(this)">
 <br>
 <textarea contenteditable="true" id="textarea" rows="24" cols="80" ondrop="alert('TODO')" autofocus>
 //  Ti prego, scrivi qualcosa di sensato...
-
-let x = "alert(x)";
-alert(x);
+//~ let x = "alert(x)";
+//~ alert(x);
+let a = [1,2,3];
+console.log(a);
 </textarea>
 <br>
 <span style="font-size:small">&copy; 2024 by Paolo Caressa</span>
@@ -53,20 +56,20 @@ alert(x);
 <script>
 
 let token_list = null;
-let run_time = null;
+let run_time = {debug: false};
+let verbose = false;
 
 function parse() {
     token_list = sjs_scan(document.getElementsByTagName("textarea").textarea.value);
     console.log(token_list);
-    if (false) {
+    if (verbose) {
         let w = window.open("/", "Token List");
         w.document.write("<h1>Token List</h1><table>");
         for (let i = 0; i < token_list.length; ++ i) {
             w.document.write("<tr><td><b>" + token_list[i].s + "</b></td><td>" + token_list[i].t + "</td></tr>");
         }
         w.document.write("</table>");
-    }
-}
+}}
 
 function compile() {
     if (token_list == null) {
@@ -74,21 +77,40 @@ function compile() {
     } else {
         run_time = sjs_compile(token_list);
         console.log(run_time);
-    }
-}
+        if (verbose) {
+            let w = window.open("/", "Compiled Code");
+            w.document.write("<h1>Compiled Code</h1><table>");
+            for (let i = 0; i < run_time.code.length; ++ i) {
+                w.document.write("<code>[" + i + "] ");
+                if (run_time.code[i].$name) {
+                    w.document.write(run_time.code[i].$name);
+                } else {
+                    w.document.write(run_time.code[i]);
+                }
+                w.document.write("</code></br>");
+}}}}
 
 function run() {
     if (run_time == null) {
         alert("Run requires Compile");
     } else {
         sjs_run(run_time);
-    }
-}
+}}
 
 function execute() {
     parse();
     compile();
     run();
+}
+
+function debug() {
+    run_time.debug = !run_time.debug;
+    console.log("Debug: " + run_time.debug);
+}
+
+function popup() {
+    verbose = !verbose;
+    console.log("Popup: " + verbose);
 }
 
 function load(input) {
