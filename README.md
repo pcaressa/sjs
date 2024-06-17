@@ -54,17 +54,21 @@ I tipi di dato predefiniti sono:
 
 ## The virtual machine
 
+### The virtual memory of the machine
+
 ### Variables
 
-The runtime environment object contains an attribute `env` which is used to store symbols defined in the current scope. Each symbol defined by a `let v = x` is stored as an object `env.v = {value: x, type: t}`.
+The runtime environment object contains an attribute `env` which is used to store symbols defined in the current scope. Each variable definition `let v = x` corresponds to `env.v = x`.
 
-When a variable's name appears inside an expression, it is compiled as
+When a variable's name v is parsed, the compiler dumps the code
 
     REF v
 
-At runtime, the `REF` instruction parses the name `v` and looks for it in the environment: then the object `{ref: r, at: []}` is pushed on the stack, where `r` is a reference to the `{value: x, type: t}` object in `env.v`. If the value of the object is needed, then `r.value` is pushed on the stack, else if the reference is needed, the reference is used.
+At runtime, the `REF` instruction looks for the name `v` in the environment: if it finds it, the object `r = {env: e, at: [v]}` is pushed on the stack, where `e` is the environment containing the variable and `v` the variable's name.
 
-For example consider:
+Although when a variable is quoted in the text the compiled code creates a reference for it at runtime, often only the value of the reference is needed, for example on the RHS of an assignment, so that the virtual machine uses the `VAL` instruction to convert the reference `r` on the stack into its value `r.env[at[0]]`.
+
+An example of usage of references is the following: consider
 
     x[1] = x[0];
 
@@ -77,107 +81,13 @@ This is compiled as
     PUSH 0
     DEREF
     SET
-
-The `REF` instruction looks for the attribute `x` inside `rt.env` and push the reference `{ref: {value: v, type: t}, at: []}` on the stack. Next `PUSH` pushes the object `{ref: {value: 1, type: "number"}, at: []}` and the `DEREF` instruction modifies the reference to `{ref: {value: v, type: t}, at: [1]}`. The second sequence `REF-PUSH-DEREF` does the same leaving `{ref: {value: v, type: t}, at: [0]}` on the stack.
+<
+The `REF` instruction looks for the attribute `x` inside `rt.env` and push the reference `{env: {..., x:v, ...}, at: [x]}` on the stack. Next `PUSH` pushes `1` and the `DEREF` instruction modifies the reference to `{env: {..., x:v, ...}, at: [x,1]}`. The second sequence `REF-PUSH-DEREF` does the same leaving `{env: {..., x:v, ...}, at: [x,0]}` on the stack.
 
 Finally the `SET` operator pops two references and assigns the value of the topmost to the one below, in this case the final result will be that the attribute `1` of the object `v` will be set to the value of `v[0]`.
 
-This device is not efficient, since operators that just need the value of a variable will always use the `value` attribute discarding the rest, but it is simple.
+This device is not efficient, since operators that just need the value of a variable will perform taking the reference and then the value, but it is simple. One could get rid of it by defining a new instruction `REFVAL` that retrieve the value of a variable and pushes it on the stack, introducing an optinization in the code by converting sequences `REF s VAL` into `REFVAL s`.
 
-
-env = {a: {value: [1,2,3], type: "object"}}
-
-    REF a
-    PUSH 1
-    DEREF
-    REF a
-    PUSH 0
-    DEREF
-    SET
-
-REF a   s: (r)  dove r = {ref:{value: [1,2,3], type: "object"}, at:[]}
-PUSH 1  s: (r {ref:{value:1, type: "number"}, at:[]}
-DEREF   s: (s)  dove s = {ref:{value: [1,2,3], type: "object"}, at:[1]})
-REF a   s: (s r)  dove r = {ref:{value: [1,2,3], type: "object"}, at:[]}
-PUSH 1  s: (s r {ref:{value:1, type: "number"}, at:[]}
-DEREF   s: (s t)  dove s = {ref:{value: [1,2,3], type: "object"}, at:[0]})
-SET     pone s.ref.value[s.at[0]] = t.ref.value[t.at[0]]
-
-
-### References
-
-When a variable is mentioned in a JavaScript expression, an object is pushed on the stack of the form:
-
-    { ref: v, at: s }
-
-where `v` is the 
-
-### Objects
-
-The SJS runtime deals only with objects: that means that even numbers are created as objects. However the standard internals of the JS environment are not implemented in detail.
-
-According to SJS an object contains always:
-
-- A "value" attribute which is the JS value of the object.
-- A "type" attribute which is a string denoting the type of the object: the built-in function "typeof" returns this value.
-- A "is_builtin" attribute which true if the object is a builtin function, else undefined.
-- A "is_user" attribute which true if the object is a user function, else undefined.
-
-When a variable is defined, as in
-
-    let x = 1;
-
-an attribute with name x and value {"value": 1, "type": "number"} is added to the rt.env object.
-
-When a variable is referenced in an expression, the object corresponding to it is pushed on the stack: if only the value of the variable is needed, that is retrieved, else if a reference to the variable is needed, then the complete object is considered.
-
-For example,
-
-    x = x + 1;
-
-is compiled as
-
-    VAR "x"
-    VAR "x"
-    PUSH 1
-    ADD
-    SET
-
-The VAR instruction parse a string, looks for it in the current environment and, if it founds it, push the {"value", "type"} object on the stack. When the ADD instruction is executed, is pops the {"value": 1, "type": "number"} object just pushed, next pops {"value": v, "type":t} which is the object corresponding to "x". Then checks against types and performs the sum of the two values resulting in an object {"value": x + 1, "type": "number"}.
-
-When SET is executed, it pops this object and the one below it, thus a reference to the {"value", "type"} definition of "x". But this time SET assigns to the "value?" attribute of this object the new value. Therefore, the variable's value is changed.
-
-Consider also
-
-    x[1] = x[0];
-
-This is compiled as
-
-    VAR "x"
-    PUSH 1
-    MEMBER
-    VAR "x"
-    PUSH 0
-    MEMBER
-    SET
-
-The MEMBER instruction creates a new object {at: 1, of: {...}} where the value of the "of" attribute is the object associated to the variable "x", thus {"value": value of x, "type": type of x}. When a function such as ADD has a member object among its operands, it uses the "at" and "of" information to retrieve the value of the object, while a function such as SET uses those information to retrieve a reference to the value to be changed.
-
-For example
-
-    x[0].y = 1;
-
-is compiled as
-
-    VAR "x"
-    PUSH 0
-    MEMBER
-    PUSH "y"
-    MEMBER
-    PUSH 1
-    SET
-    
-The SET instruction pops the value 1 to assign and the object to be assigned, which is {at: "y", of: {at: 0, of: {value:x, type:"object"}}}.
 
 
 ## Opcodes

@@ -35,19 +35,19 @@
 <body>
 
 <!--<button type="button" onclick="load()">Load</button> -->
-<button type="button" onclick="execute()">Execute</button>
+<button type="button" onclick="execute(false)">Execute</button>
+<button type="button" onclick="execute(true)">Debug</button>
 <button type="button" onclick="parse()">Parse</button>
 <button type="button" onclick="compile()">Compile</button>
 <button type="button" onclick="run()">Run</button>
-<button type="button" onclick="debug()">Debug</button>
-<button type="button" onclick="popup()">Popup</button>
+<button id="dump" type="button" onclick="dump()">Quiet</button>
 <input type="file" accept="js" onchange="load(this)">
 <br>
 <textarea contenteditable="true" id="textarea" rows="24" cols="80" ondrop="alert('TODO')" autofocus>
 //  Ti prego, scrivi qualcosa di sensato...
 //~ let x = "alert(x)";
 //~ alert(x);
-let a = [1,2,3];
+let a = [1,2,3], b = {a:1,b:2,c:3};
 console.log(a);
 </textarea>
 <br>
@@ -90,27 +90,24 @@ function compile() {
                 w.document.write("</code></br>");
 }}}}
 
-function run() {
+function run(debug) {
     if (run_time == null) {
         alert("Run requires Compile");
     } else {
-        sjs_run(run_time);
+        sjs_run(run_time, debug);
 }}
 
-function execute() {
+function execute(debug) {
+    console.log("Debug: " + debug);
     parse();
     compile();
-    run();
+    run(debug);
 }
 
-function debug() {
-    run_time.debug = !run_time.debug;
-    console.log("Debug: " + run_time.debug);
-}
-
-function popup() {
+function dump() {
     verbose = !verbose;
     console.log("Popup: " + verbose);
+    document.getElementById("dump").innerHTML = verbose ? "Verbose" : "Quiet";
 }
 
 function load(input) {
