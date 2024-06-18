@@ -291,9 +291,10 @@ let sjs_compile_expression = function(tl, rt)
         "/": 40, "-NEG-": 50, "!": 50, "++": 50, "--": 50, "new": 60
     };
     let OPERATORS = {
-        "=": rt.SET, "+=": rt.SETADD, "-=": rt.SETSUB, "==": rt.EQ, "!=": rt.NE,
-        "<": rt.LT, ">": rt.GT, "<=": rt.LE, ">=": rt.GE, "+": rt.ADD, "-": rt.SUB,
-        "*": rt.MUL, "/": rt.DIV, "-NEG-": rt.NEG, "++": rt.INC, "--": rt.DEC
+        "=": rt.SET, "+=": rt.SETADD, "-=": rt.SETSUB,
+        "==": rt.EQ, "!=": rt.NE, "<": rt.LT, ">": rt.GT, "<=": rt.LE, ">=": rt.GE,
+        "+": rt.ADD, "-": rt.SUB, "*": rt.MUL, "/": rt.DIV,
+        "-NEG-": rt.NEG, "!": rt.NOT, "++": rt.INC, "--": rt.DEC
     };
 
     /// Compile all operators in the stack with priority > the priority of opt.
@@ -437,7 +438,20 @@ let sjs_compile = function(tl)
 // Add opcode functions to object rt
 let sjs_rtlib = function(rt) {
 
-    /** Pop a reference r, evaluates it by deferenging all its indexed
+    /** Pop a reference r, deference it and increases its value by v: used by
+        DEC, INC, SETADD, SETSUB. */
+    rt.increase = function(v) {
+        let r = rt.stack.pop();
+        sjs_error(r.env == undefined, "Invalid LHS in assignment");
+        /*  Apply all dereferences that figure in its "at" attribute. */
+        for (let i = 0; i < r.at.length - 1; ++ i) {
+            r.env = r.env[r.at[i]];
+        }
+        r.env[r.at[r.at.length - 1]] += v;
+        rt.stack.push(r.env[r.at[r.at.length - 1]]);
+    };
+
+    /** Pop a reference r, evaluates it by deferencing all its indexed
         and return it. */
     rt.popval = function() {
         let r = rt.stack.pop();
@@ -455,11 +469,7 @@ let sjs_rtlib = function(rt) {
     };
 
     /// ADD() pop y, pop x, push x + y
-    rt.ADD = function() {
-        let y = rt.popval();
-        let x = rt.popval();
-        rt.stack.push(x + y);
-    };
+    rt.ADD = function() { let y = rt.popval(); rt.stack.push(rt.popval() + y); };
     rt.ADD.$name = "ADD";
     
     /// APPLY() pop a, pop f, apply function f to list x.
@@ -498,16 +508,7 @@ let sjs_rtlib = function(rt) {
     rt.CLOSURE.$name = "CLOSURE";
 
     /// DEC() pop v, pop x, { x = v; }, push v
-    rt.DEC = function() {
-        let r = rt.stack.pop();
-        sjs_error(r.env == undefined, "Invalid LHS in assignment");
-        /*  Apply all dereferences that figure in its "at" attribute. */
-        for (let i = 0; i < r.at.length - 1; ++ i) {
-            r.env = r.env[r.at[i]];
-        }
-        -- r.env[r.at[r.at.length - 1]];
-        rt.stack.push(r.env[r.at[r.at.length - 1]]);
-    };
+    rt.DEC = function() { rt.increase(-1); };
     rt.DEC.$name = "DEC";
 
     /** DEREF() pop i, pop a value or reference and add to the
@@ -521,11 +522,7 @@ let sjs_rtlib = function(rt) {
     rt.DEREF.$name = "DEREF";
 
     /// DIV() pop y, pop x, push x / y
-    rt.DIV = function() {
-        let y = rt.popval();
-        let x = rt.popval();
-        rt.stack.push(x / y);
-    };
+    rt.DIV = function() { let y = rt.popval(); rt.stack.push(rt.popval() / y); };
     rt.DIV.$name = "MUL";
 
     /// DUPJPNZ() pop x, if x != 0 push x and perform JP, else perform NOP.
@@ -552,46 +549,37 @@ let sjs_rtlib = function(rt) {
     };
     rt.DUPJPZ.$name = "DUPJPZ";
 
+    /// EQ() pop y, pop x, push x == y
+    rt.EQ = function() { let y = rt.popval(); rt.stack.push(rt.popval() == y); };
+    rt.EQ.$name = "EQ";
+
+    /// GE() pop y, pop x, push x < y
+    rt.GE = function() { let y = rt.popval(); rt.stack.push(rt.popval() >= y); };
+    rt.GE.$name = "GE";
+
+    /// GT() pop y, pop x, push x < y
+    rt.GT = function() { let y = rt.popval(); rt.stack.push(rt.popval() > y); };
+    rt.GT.$name = "GT";
+
     /// INC() pop v, pop x, { x = v; }, push v
-    rt.INC = function() {
-        let r = rt.stack.pop();
-        sjs_error(r.env == undefined, "Invalid LHS in assignment");
-        /*  Apply all dereferences that figure in its "at" attribute. */
-        for (let i = 0; i < r.at.length - 1; ++ i) {
-            r.env = r.env[r.at[i]];
-        }
-        ++ r.env[r.at[r.at.length - 1]];
-        rt.stack.push(r.env[r.at[r.at.length - 1]]);
-    };
+    rt.INC = function() { rt.increase(1); };
     rt.INC.$name = "INC";
 
     /// JP() get a number and set this.ic to it.
-    rt.JP = function() {
-        rt.ic = rt.code[rt.ic];
-    };
+    rt.JP = function() { rt.ic = rt.code[rt.ic]; };
     rt.JP.$name = "JP";
     
-    /// JPNZ() pop x, if x == 0 perform JP, else perform NOP.
-    rt.JPNZ = function() {
-        let r = rt.popval();
-        if (r) {
-            rt.ic = rt.code[rt.ic];
-        } else {
-            ++ rt.ic;   // skip operand of the JPZ instruction
-        }
-    };
+    /// JPNZ() pop x, if x == 0 perform JP, else skip the operand.
+    rt.JPNZ = function() { if (rt.popval()) { rt.ic = rt.code[rt.ic]; } else { ++ rt.ic; } };
     rt.JPNZ.$name = "JPNZ";
 
     /// JPZ() pop x, if x == 0 perform JP, else perform NOP.
-    rt.JPZ = function() {
-        let r = rt.popval();
-        if (!r) {
-            rt.ic = rt.code[rt.ic];
-        } else {
-            ++ rt.ic;   // skip operand of the JPZ instruction
-        }
-    };
+    rt.JPZ = function() { if (!rt.popval()) { rt.ic = rt.code[rt.ic]; } else { ++ rt.ic; } };
     rt.JPZ.$name = "JPZ";
+
+    /// LE() pop y, pop x, push x <= y
+    rt.LE = function() { let y = rt.popval(); rt.stack.push(rt.popval() <= y); };
+    rt.LE.$name = "LE";
 
     /** LET() pop v, pop s and creates a variable with name s and value v.
         Notice that a variable's value is always an object, with attribute "value"
@@ -604,17 +592,29 @@ let sjs_rtlib = function(rt) {
     };
     rt.LET.$name = "LET";
     
+    /// LT() pop y, pop x, push x < y
+    rt.LT = function() { let y = rt.popval(); rt.stack.push(rt.popval() < y); };
+    rt.LT.$name = "LT";
+
     /// MUL() pop y, pop x, push x * y
-    rt.MUL = function() {
-        let y = rt.popval();
-        let x = rt.popval();
-        rt.stack.push(x * y);
-    };
+    rt.MUL = function() { let y = rt.popval(); rt.stack.push(rt.popval() * y); };
     rt.MUL.$name = "MUL";
+
+    /// NE() pop y, pop x, push x != y
+    rt.NE = function() { let y = rt.popval(); rt.stack.push(rt.popval() != y); };
+    rt.NE.$name = "NE";
+
+    /// NEG() pop x, push -x
+    rt.NEG = function() { rt.stack.push(-rt.popval()); };
+    rt.NEG.$name = "NEG";
 
     /// NOP() does nothing at all
     rt.NOP = function() {};
     rt.NOP.$name = "NOP";
+
+    /// NOT() pop x, push !x
+    rt.NOT = function() { rt.stack.push(!rt.popval()); };
+    rt.NOT.$name = "NOT";
 
     /// OBJADD() pop v, pop n, pop a, { a[n] = v; } push a
     rt.OBJADD = function() {
@@ -661,6 +661,40 @@ let sjs_rtlib = function(rt) {
         rt.stack.push(v);
     };
     rt.SET.$name = "SET";
+
+    /// SETADD() pop v, pop x, { x += v; }, push v
+    rt.SETADD = function() { rt.increase(rt.popval()); };
+    //~ rt.SETADD = function() {
+        //~ let v = rt.popval();
+        //~ let r = rt.stack.pop();
+        //~ sjs_error(r.env == undefined, "Invalid LHS in assignment");
+        //~ /*  Apply all dereferences that figure in its "at" attribute. */
+        //~ for (let i = 0; i < r.at.length - 1; ++ i) {
+            //~ r.env = r.env[r.at[i]];
+        //~ }
+        //~ r.env[r.at[r.at.length - 1]] += v;
+        //~ rt.stack.push(v);
+    //~ };
+    rt.SETADD.$name = "SETADD";
+
+    /// SETSUB() pop v, pop x, { x -= v; }, push v
+    rt.SETSUB = function() { rt.increase(-rt.popval()); };
+    //~ rt.SETSUB = function() {
+        //~ let v = rt.popval();
+        //~ let r = rt.stack.pop();
+        //~ sjs_error(r.env == undefined, "Invalid LHS in assignment");
+        //~ /*  Apply all dereferences that figure in its "at" attribute. */
+        //~ for (let i = 0; i < r.at.length - 1; ++ i) {
+            //~ r.env = r.env[r.at[i]];
+        //~ }
+        //~ r.env[r.at[r.at.length - 1]] -= v;
+        //~ rt.stack.push(v);
+    //~ };
+    rt.SETSUB.$name = "SETSUB";
+
+    /// SUB() pop y, pop x, push x - y
+    rt.SUB = function() { let y = rt.popval(); rt.stack.push(rt.popval() - y); };
+    rt.SUB.$name = "SUB";
 
     return rt;
 };
