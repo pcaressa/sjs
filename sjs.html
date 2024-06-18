@@ -1,23 +1,28 @@
+<!DOCTYPE html>
 <html>
 <head>
-    <title>Self Javascript Playground</title>
+    <title>Self JavaScript Playground</title>
 
 <script src="s.js"></script>
 
 <style>
     * {
-        font-face:monospace;
+        font-family:monospace;
         font-size:104%;
         margin:0;
         background-color:black;
         color:white;
-        border: solid black 1pcx
+        border: black solid 1px;
     }
-    button {
+    button, input, label {
         font-size:100%;
         color: white;
+        border: white solid 1px;
+        padding-block: 1px;
+        padding-inline: 6px;
     }
     b, textarea {
+        font-family:monospace;
         background-color: white;
         color: black;
     }
@@ -27,7 +32,7 @@
         color: black;
         width: 56em;
         //height: 24em;
-        border: 1px solid #ccc;
+        border: #ccc solid 1px;
 }
 </style>
 
@@ -35,13 +40,13 @@
 <body>
 
 <!--<button type="button" onclick="load()">Load</button> -->
+<input type="file" onchange="load(this)" id="files" style="display:none"/><label for="files">Load</label>
 <button type="button" onclick="execute(false)">Execute</button>
 <button type="button" onclick="execute(true)">Debug</button>
 <button type="button" onclick="parse()">Parse</button>
 <button type="button" onclick="compile()">Compile</button>
 <button type="button" onclick="run()">Run</button>
-<button id="dump" type="button" onclick="dump()">Quiet</button>
-<input type="file" accept="js" onchange="load(this)">
+<button id="dump" type="button" onclick="dump()">Quiet?</button>
 <br>
 <textarea contenteditable="true" id="textarea" rows="24" cols="80" ondrop="alert('TODO')" autofocus>
 //  Ti prego, scrivi qualcosa di sensato...
@@ -49,6 +54,11 @@
 //~ alert(x);
 let a = [1,2,3], b = {a:1,b:2,c:3};
 console.log(a);
+let x = {a: "alpha", b:{a:1,b:null}, c: 0.001};
+console.log(x);
+x.b.b = 10;
+++ x.c;
+console.log(x);
 </textarea>
 <br>
 <span style="font-size:small">&copy; 2024 by Paolo Caressa</span>
@@ -82,10 +92,10 @@ function compile() {
             w.document.write("<h1>Compiled Code</h1><table>");
             for (let i = 0; i < run_time.code.length; ++ i) {
                 w.document.write("<code>[" + i + "] ");
-                if (run_time.code[i].$name) {
+                if (run_time.code[i] && run_time.code[i].$name) {
                     w.document.write(run_time.code[i].$name);
                 } else {
-                    w.document.write(run_time.code[i]);
+                    w.document.write(sjs_print_object(run_time.code[i]));
                 }
                 w.document.write("</code></br>");
 }}}}
