@@ -1,13 +1,3 @@
-/*
-    Questo JS gestisce solo oggetti: anche numeri, stringhe etc.
-    sono sempre oggetti.
-    
-    Se un oggetto ha l'attributo __deref__ si tratta di un array
-    che contiene una lista di oggetti che si usano per deferenziare.
-    
-    Un oggetto con questo attributo può essere deferenziato.
-*/
-
 /// \file s.js - Self Javascript
 
 "use strict";
@@ -136,7 +126,7 @@ let sjs_error = function(cond, msg, token = null)
 {
     if (cond) {
         msg = "Error: " + msg;
-        if (token != null) { msg += " @ " + token.l + ":" + token.c; }
+        if (token != null) { msg += " at " + token.l + ":" + token.c; }
         alert(msg);
         throw null;
     }
@@ -221,7 +211,7 @@ let sjs_compile_function = function(tl, rt)
         closure by defining its environmente as the runtime environment at the
         time when CLOSURE is executed. The result is then put on the stack. */
     // Parameters.
-    token = tl.shift();
+    let token = tl.shift();
     sjs_error(token.s != "(", "'(' expected in function definition", token);
     let parameters = [];
     token = tl.shift();
@@ -229,7 +219,9 @@ let sjs_compile_function = function(tl, rt)
         sjs_error(token.t != "name", "name expected in function definition", token);
         parameters.push(token.s);
         token = tl.shift();
-        if (token.s == ",") { token = tl.shift() } else {
+        if (token.s == ",") {
+            token = tl.shift()
+        } else {
             sjs_error(token.s != ")", "')' expected in function definition", token);
         }
     }
@@ -253,19 +245,19 @@ let sjs_compile_operand = function(token, tl, rt)
     console.log("> sjs_compile_operand");
     
     // Check against constants
-    if (token.t == "number" || token.t == "string") { sjs_compile_value(rt, token.s); } else
-    if (token.s == "true" || token.s == "false") { sjs_compile_value(rt, token.s == "true"); } else
-    if (token.s == "null") { sjs_compile_value(rt, null); } else
-    if (token.s == "undefined") { sjs_compile_value(rt, undefined); } else
-    // Check against variable name
-    if (token.t == "name") { rt.code.push(rt.REF); rt.code.push(token.s); } else
+    if (token.t == "number" || token.t == "string") { sjs_compile_value(rt, token.s); }
+    else if (token.s == "true" || token.s == "false") { sjs_compile_value(rt, token.s == "true"); }
+    else if (token.s == "null") { sjs_compile_value(rt, null); }
+    else if (token.s == "undefined") { sjs_compile_value(rt, undefined); }
     // Check against literal objects
-    if (token.s == "function") { sjs_compile_function(tl, rt); } else
-    if (token.s == "{") { sjs_compile_object(tl, rt); } else
-    if (token.s == "[") { sjs_compile_array(tl, rt, "]"); }
+    else if (token.s == "function") { sjs_compile_function(tl, rt); }
+    else if (token.s == "{") { sjs_compile_object(tl, rt); }
+    else if (token.s == "[") { sjs_compile_array(tl, rt, "]"); }
+    // Check against variable name
+    else if (token.t == "name") { rt.code.push(rt.REF); rt.code.push(token.s); }
     else {
+        // If all else fails, we expect a subexpression "(expr)"
         sjs_error(token.s != "(", "Syntax error: " + token.s, token);
-        // Subexpression
         rt = sjs_compile_expression(tl, rt);
         token = tl.shift();
         sjs_error(token.s != ")", "')' expected", token);
@@ -296,12 +288,12 @@ let sjs_compile_expression = function(tl, rt)
         "fake": -1, // fake operator, needed in while condition in sjs_compile_stack.
         "=": 0, "+=": 0, "-=": 0, "||": 10, "&&": 15, "==": 20, "!=": 20,
         "<": 21, ">": 21, "<=": 21, ">=": 21, "+": 30, "-": 30, "*": 40,
-        "/": 40, "NEG": 50, "!": 50, "++": 50, "--": 50, "new": 60
+        "/": 40, "-NEG-": 50, "!": 50, "++": 50, "--": 50, "new": 60
     };
     let OPERATORS = {
         "=": rt.SET, "+=": rt.SETADD, "-=": rt.SETSUB, "==": rt.EQ, "!=": rt.NE,
         "<": rt.LT, ">": rt.GT, "<=": rt.LE, ">=": rt.GE, "+": rt.ADD, "-": rt.SUB,
-        "*": rt.MUL, "/": rt.DIV
+        "*": rt.MUL, "/": rt.DIV, "-NEG-": rt.NEG, "++": rt.INC, "--": rt.DEC
     };
 
     /// Compile all operators in the stack with priority > the priority of opt.
@@ -329,10 +321,12 @@ let sjs_compile_expression = function(tl, rt)
         token = tl.shift();
         
         // Deal with possible prefixes
-        // A minus token means a negation
-        if (token.s == "-") { token.s = "NEG"; }
-        
-        /////////////// TODO!!!!!!!!!!!!!!!!!!!!!!
+        while (token.s == "!" || token.s == "-" || token.s == "--" || token.s == "++") {
+            // A minus token means a negation
+            compile_stack(token.s == "-" && "-NEG-" || token.s);
+            stack.push(token.s);
+            token = tl.shift();
+        }
         
         token = sjs_compile_operand(token, tl, rt);
         
@@ -345,17 +339,16 @@ let sjs_compile_expression = function(tl, rt)
         while (token.s == "." || token.s == "(" || token.s == "[") {
             if (token.s == "(") {   // Actual parameter list
                 // First of all takes the value of the function
-                rt.code.push(rt.VAL);
                 sjs_compile_array(tl, rt, ")");
                 rt.code.push(rt.APPLY);
-            }
+            } else
             if (token.s == ".") {   // Member operator x.y
                 token = tl.shift();
                 sjs_error(token.t != "name", "Name expected as object attribute", token);
                 sjs_compile_value(rt, token.s);
                 rt.code.push(rt.DEREF);
-            }
-            if (token.s == "[") {   // Member operator x[y]
+            } else {
+                // token.s == "["!  Member operator x[y]
                 token = sjs_compile_expression(tl, rt);
                 sjs_error(token.s != "]", "']' expected");
                 rt.code.push(rt.DEREF);
@@ -404,13 +397,13 @@ let sjs_compile = function(tl)
 
     // Brutally consume the token list as far as it is parsed
     while ((token = tl.shift()).s != "}") {
-        //token = tl.shift();
-        if (token.s == "break") { sjs_error(true, "TODO"); } else
-        if (token.s == "continue") { sjs_error(true, "TODO"); } else
-        if (token.s == "do") { sjs_error(true, "TODO"); } else
-        if (token.s == "for") { sjs_error(true, "TODO"); } else
-        if (token.s == "if") { sjs_error(true, "TODO"); } else
-        if (token.s == "let") {
+        if (token.s == "break") { sjs_error(true, "TODO"); }
+        else if (token.s == "catch") { sjs_error(true, "TODO"); }
+        else if (token.s == "continue") { sjs_error(true, "TODO"); }
+        else if (token.s == "do") { sjs_error(true, "TODO"); }
+        else if (token.s == "for") { sjs_error(true, "TODO"); }
+        else if (token.s == "if") { sjs_error(true, "TODO"); }
+        else if (token.s == "let") {
             do {
                 token = tl.shift();
                 sjs_error(token.t != "name", "Name expected", token);
@@ -422,22 +415,20 @@ let sjs_compile = function(tl)
                     // variable default value
                     sjs_compile_value(rt, undefined);
                 }
-                rt.code.push(rt.VAL);
                 rt.code.push(rt.LET);
             } while (token.s == ",");
             sjs_error(token.s != ";", "';' expected", token);
-        } else
-        if (token.s == "return") { sjs_error(true, "TODO"); } else
-        if (token.s == "throw") { sjs_error(true, "TODO"); } else
-        if (token.s == "try") { sjs_error(true, "TODO"); } else
-        if (token.s == "while") { sjs_error(true, "TODO"); } else
-        {
+        }
+        else if (token.s == "return") { sjs_error(true, "TODO"); }
+        else if (token.s == "throw") { sjs_error(true, "TODO"); }
+        else if (token.s == "try") { sjs_error(true, "TODO"); }
+        else if (token.s == "while") { sjs_error(true, "TODO"); }
+        else {
             // Expression statement
             tl.unshift(token);
             token = sjs_compile_expression(tl, rt);
             sjs_error(token.s != ";", "';' expected", token);
-        }
-    }
+    }}
     return rt;
 }
 
@@ -446,33 +437,41 @@ let sjs_compile = function(tl)
 // Add opcode functions to object rt
 let sjs_rtlib = function(rt) {
 
-    let VALPOP = function() {
-        rt.VAL();
-        return rt.stack.pop();
-    }
-    
+    /** Pop a reference r, evaluates it by deferenging all its indexed
+        and return it. */
+    rt.popval = function() {
+        let r = rt.stack.pop();
+        //~ console.log("r = " + sjs_print_object(r));
+        if (r && r.env) {
+            /*  To evaluate a reference just apply all dereferences
+                that figure in its "at" attribute. */
+            for (let i = 0; i < r.at.length; ++ i) {
+                //~ console.log("Applico " + r.at[i] + " a " + sjs_print_object(r.env) + " ottenendo " + sjs_print_object(r.env[r.at[i]]) + " di tipo " + typeof(r.env[r.at[i]]));
+                r.env = r.env[r.at[i]];
+            }
+            r = r.env;
+        }
+        return r;
+    };
+
     /// ADD() pop y, pop x, push x + y
     rt.ADD = function() {
-        rt.VAL();
-        let y = rt.stack.pop();
-        rt.VAL();
-        let x = rt.stack.pop();
+        let y = rt.popval();
+        let x = rt.popval();
         rt.stack.push(x + y);
     };
     rt.ADD.$name = "ADD";
     
     /// APPLY() pop a, pop f, apply function f to list x.
     rt.APPLY = function() {
-        rt.VAL();
-        let a = rt.stack.pop();
-        rt.VAL();
-        let f = rt.stack.pop();
+        let a = rt.popval();
+        let f = rt.popval();
         
-        console.log(sjs_print_object(f) + " :: " + typeof(f));
+        //~ console.log(sjs_print_object(f) + " :: " + typeof(f));
         
         //sjs_error(typeof(f) != "function", "Apply arguments only to functions");
         
-        if (f.apply != undefined) { // Native JS function
+        if (f.apply) { // Native JS function
             rt.stack.push(f.apply(null, a));
         } else {
             // esegue la funzione definita dall'utente!!!
@@ -483,10 +482,8 @@ let sjs_rtlib = function(rt) {
     
     /** ARRADD() pop v, pop a, { a[a.length] = v; ++ a.length; } push a */
     rt.ARRADD = function() {
-        rt.VAL();
-        let v = rt.stack.pop();
-        rt.VAL();
-        let a = rt.stack.pop();
+        let v = rt.popval();
+        let a = rt.popval();
         a.push(v);
         rt.stack.push(a);
     };
@@ -500,21 +497,41 @@ let sjs_rtlib = function(rt) {
     };
     rt.CLOSURE.$name = "CLOSURE";
 
+    /// DEC() pop v, pop x, { x = v; }, push v
+    rt.DEC = function() {
+        let r = rt.stack.pop();
+        sjs_error(r.env == undefined, "Invalid LHS in assignment");
+        /*  Apply all dereferences that figure in its "at" attribute. */
+        for (let i = 0; i < r.at.length - 1; ++ i) {
+            r.env = r.env[r.at[i]];
+        }
+        -- r.env[r.at[r.at.length - 1]];
+        rt.stack.push(r.env[r.at[r.at.length - 1]]);
+    };
+    rt.DEC.$name = "DEC";
+
     /** DEREF() pop i, pop a value or reference and add to the
         "at" property the value of i. */
     rt.DEREF = function() {
-        rt.VAL();
-        let i = rt.stack.pop();
+        let i = rt.popval();
         let r = rt.stack.pop();
         if (r.env != undefined) { r.at.push(i); } else { r = undefined; }
         rt.stack.push(r);
     };
     rt.DEREF.$name = "DEREF";
 
+    /// DIV() pop y, pop x, push x / y
+    rt.DIV = function() {
+        let y = rt.popval();
+        let x = rt.popval();
+        rt.stack.push(x / y);
+    };
+    rt.DIV.$name = "MUL";
+
     /// DUPJPNZ() pop x, if x != 0 push x and perform JP, else perform NOP.
     rt.DUPJPNZ = function() {
-        rt.VAL();
-        if ((r = rt.stack.pop())) {
+        let r = rt.popval();
+        if (r) {
             rt.stack.push(r);
             rt.JP();
         } else {
@@ -525,8 +542,8 @@ let sjs_rtlib = function(rt) {
 
     /// DUPJPZ() pop x, if x == 0 push x and perform JP, else perform NOP.
     rt.DUPJPZ = function() {
-        rt.VAL();
-        if (!(r = rt.stack.pop())) {
+        let r = rt.popval();
+        if (!r) {
             rt.stack.push(r);
             rt.JP();
         } else {
@@ -534,6 +551,19 @@ let sjs_rtlib = function(rt) {
         }
     };
     rt.DUPJPZ.$name = "DUPJPZ";
+
+    /// INC() pop v, pop x, { x = v; }, push v
+    rt.INC = function() {
+        let r = rt.stack.pop();
+        sjs_error(r.env == undefined, "Invalid LHS in assignment");
+        /*  Apply all dereferences that figure in its "at" attribute. */
+        for (let i = 0; i < r.at.length - 1; ++ i) {
+            r.env = r.env[r.at[i]];
+        }
+        ++ r.env[r.at[r.at.length - 1]];
+        rt.stack.push(r.env[r.at[r.at.length - 1]]);
+    };
+    rt.INC.$name = "INC";
 
     /// JP() get a number and set this.ic to it.
     rt.JP = function() {
@@ -543,8 +573,8 @@ let sjs_rtlib = function(rt) {
     
     /// JPNZ() pop x, if x == 0 perform JP, else perform NOP.
     rt.JPNZ = function() {
-        rt.VAL();
-        if (rt.stack.pop()) {
+        let r = rt.popval();
+        if (r) {
             rt.ic = rt.code[rt.ic];
         } else {
             ++ rt.ic;   // skip operand of the JPZ instruction
@@ -554,8 +584,8 @@ let sjs_rtlib = function(rt) {
 
     /// JPZ() pop x, if x == 0 perform JP, else perform NOP.
     rt.JPZ = function() {
-        rt.VAL();
-        if (!rt.stack.pop()) {
+        let r = rt.popval();
+        if (!r) {
             rt.ic = rt.code[rt.ic];
         } else {
             ++ rt.ic;   // skip operand of the JPZ instruction
@@ -568,26 +598,31 @@ let sjs_rtlib = function(rt) {
         the actual value. In this way we can refer to the variable when assigning
         a value to it. */
     rt.LET = function() {
-        rt.VAL();
-        let v = rt.stack.pop();
+        let v = rt.popval();
         let s = rt.stack.pop(); // string expected
         rt.env[s] = v;
     };
     rt.LET.$name = "LET";
     
+    /// MUL() pop y, pop x, push x * y
+    rt.MUL = function() {
+        let y = rt.popval();
+        let x = rt.popval();
+        rt.stack.push(x * y);
+    };
+    rt.MUL.$name = "MUL";
+
     /// NOP() does nothing at all
     rt.NOP = function() {};
     rt.NOP.$name = "NOP";
 
     /// OBJADD() pop v, pop n, pop a, { a[n] = v; } push a
     rt.OBJADD = function() {
-        rt.VAL();
-        let v = rt.stack.pop();
-        rt.VAL();
-        let n = rt.stack.pop();
-        //~ alert(rt.stack[rt.stack.length-1] + "[" + n + "] = " + v);
-        rt.VAL();
-        rt.stack[rt.stack.length-1][n] = v;
+        let v = rt.popval();
+        let n = rt.popval();
+        let a = rt.popval();
+        a[n] = v;
+        rt.stack.push(a);
     };
     rt.OBJADD.$name = "OBJADD";
     
@@ -607,8 +642,7 @@ let sjs_rtlib = function(rt) {
             if (e[s] != undefined) {
                 rt.stack.push({env: e, at:[s]});
                 return;
-            }
-        }
+        }}
         alert("Symbol undefined: " + s);
         rt.stack.push(undefined);
     };
@@ -616,8 +650,7 @@ let sjs_rtlib = function(rt) {
 
     /// SET() pop v, pop x, { x = v; }, push v
     rt.SET = function() {
-        rt.VAL();
-        let v = rt.stack.pop();
+        let v = rt.popval();
         let r = rt.stack.pop();
         sjs_error(r.env == undefined, "Invalid LHS in assignment");
         /*  Apply all dereferences that figure in its "at" attribute. */
@@ -629,25 +662,6 @@ let sjs_rtlib = function(rt) {
     };
     rt.SET.$name = "SET";
 
-    /// VAL() pop a reference r and pushes its value.
-    rt.VAL = function() {
-        console.log(" > VAL()");
-        let r = rt.stack.pop();
-        console.log("r = " + sjs_print_object(r));
-        if (r.env != undefined) {
-            /*  To evaluate a reference just apply all dereferences
-                that figure in its "at" attribute. */
-            for (let i = 0; i < r.at.length; ++ i) {
-                console.log("Applico " + r.at[i] + " a " + sjs_print_object(r.env) + " ottenendo " + sjs_print_object(r.env[r.at[i]]) + " di tipo " + typeof(r.env[r.at[i]]));
-                r.env = r.env[r.at[i]];
-            }
-            r = r.env;
-        }
-        rt.stack.push(r);
-        console.log(" < VAL()");
-    };
-    rt.VAL.$name = "VAL";
-    
     return rt;
 };
 
@@ -672,18 +686,20 @@ let sjs_run = function(rt, debug)
         }
         return s + "]";
     };
-
-    while (rt.ic < rt.code.length) {
-        let ic = rt.ic;
-        ++ rt.ic;
-        if (debug) {
-            console.log(stackdump());
-            if (rt.code[ic].$name) {
-                console.log("[" + ic + "] " + rt.code[ic].$name)
-            } else {
-                console.log("[" + ic + "] " + rt.code[ic])
+    try {
+        while (rt.ic < rt.code.length) {
+            let ic = rt.ic;
+            ++ rt.ic;
+            if (debug) {
+                console.log(stackdump());
+                if (rt.code[ic].$name) {
+                    console.log("[" + ic + "] " + rt.code[ic].$name)
+                } else {
+                    console.log("[" + ic + "] " + rt.code[ic])
+                }
             }
+            rt.code[ic]();
         }
-        rt.code[ic]();
     }
+    catch (e) { alert(e); }
 }
