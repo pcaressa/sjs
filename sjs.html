@@ -49,7 +49,11 @@
 <button id="dump" type="button" onclick="dump()">Quiet?</button>
 <br>
 <textarea contenteditable="true" id="textarea" rows="24" cols="80" ondrop="alert('TODO')" autofocus>
-//  Ti prego, scrivi qualcosa di sensato...
+let i = 0;
+while (i < 10) {
+    console.log(i);
+    ++ i;
+}
 //~ let x = "alert(x)";
 //~ alert(x);
 //~ let a = [1,2,3], b = {a:1,b:2,c:3};
@@ -63,7 +67,9 @@
 //~ alert(1 || 0);
 //~ alert(0 && 1);
 //~ alert(0 || 1);
-alert(function(x) { return x + 1; });
+//~ alert(function(x) { return x + 1; });
+function(x) { return x + 1; }(10);
+
 </textarea>
 <br>
 <span style="font-size:small">&copy; 2024 by Paolo Caressa</span>
