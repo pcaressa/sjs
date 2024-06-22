@@ -11,20 +11,20 @@
         font-size:104%;
         margin:0;
         background-color:black;
-        color:white;
+        color:#0F0;
         border: black solid 1px;
     }
     button, input, label {
         font-size:100%;
-        color: white;
+        color: #0F0;
         border: white solid 1px;
         padding-block: 1px;
         padding-inline: 6px;
     }
     b, textarea {
         font-family:monospace;
-        background-color: white;
-        color: black;
+        background-color: #222;
+        color: #0F0;
     }
     div {
         font-face:monospace;
@@ -49,11 +49,27 @@
 <button id="dump" type="button" onclick="dump()">Quiet?</button>
 <br>
 <textarea contenteditable="true" id="textarea" rows="24" cols="80" ondrop="alert('TODO')" autofocus>
-let i = 0;
+
+let f = function(x) {
+  return function(y) {
+    return x + y;
+  };
+};
+let s10 = f(10);
+let s20 = f(20);
+alert(s10(30));
+alert(s20(30));
+
+/*
+let i = 0, j = 0;
 while (i < 10) {
-    console.log(i);
-    ++ i;
+  while (j < 10){
+    console.log("(" + i, "," + j + ")");
+    ++ j;
+  }
+  ++ i;
 }
+*/
 //~ let x = "alert(x)";
 //~ alert(x);
 //~ let a = [1,2,3], b = {a:1,b:2,c:3};
@@ -69,7 +85,6 @@ while (i < 10) {
 //~ alert(0 || 1);
 //~ alert(function(x) { return x + 1; });
 function(x) { return x + 1; }(10);
-
 </textarea>
 <br>
 <span style="font-size:small">&copy; 2024 by Paolo Caressa</span>
@@ -106,7 +121,7 @@ function compile() {
                 if (run_time.code[i] && run_time.code[i].$name) {
                     w.document.write(run_time.code[i].$name);
                 } else {
-                    w.document.write(sjs_print_object(run_time.code[i]));
+                    w.document.write(sjs_object2string(run_time.code[i]));
                 }
                 w.document.write("</code></br>");
 }}}}
