@@ -24,13 +24,13 @@ let sjs_error = function(cond, msg, token)
 let sjs_semicolon_expected = function(token)
 {
     sjs_error(token.s != ";", "';' expected", token);
-}
+};
 
 /// Raise an error on token.t != expected_token.
 let sjs_expected = function(token, expected_token)
 {
     sjs_error(token.t != expected_token, "'" + expected_token + "' expected", token);
-}
+};
 
 /// Return a string with a shallow representation of an object o.
 let sjs_object2string = function(o) {
@@ -147,7 +147,7 @@ let sjs_scan = function(text)
     toklist.push({s: "}", t: "}", l:0, c:0});
 
     return toklist;
-}
+};
 
 /* _________________________________________________________________________
 
@@ -160,7 +160,7 @@ let sjs_compile = function(rt, s)
     for (let i = 0; i < s.length; ++ i) {
         rt.code.push(s[i]);
     }
-}
+};
 
 /** Compile a value to be pushed on the stack at runtime. */
 let sjs_compile_value = function(rt, v)
@@ -437,6 +437,10 @@ let sjs_compile_for = function(tl, rt)
             // Skip "let" since compile_let expect this.
             tl.shift();
             sjs_compile_let(tl, rt);
+        } else
+        if (tl[0].s == ";") {
+            // Empty assignment: skip the ";"
+            tl.shift();
         } else {
             token = sjs_compile_expression(tl, rt);
             sjs_semicolon_expected(token);
@@ -593,7 +597,7 @@ let sjs_compile_block = function(tl)
     sjs_expected(token, "}");
 
     return rt;
-}
+};
 
 /* _________________________________________________________________________
 
@@ -618,11 +622,11 @@ let sjs_run = function(rt, debug)
     rt.dump = [];
     rt.debug = debug;
     sjs_execute(rt.code, rt);
-}
+};
 
 /// Executes code in runtime environment rt
-let sjs_execute = function(code, rt) {    
-    
+let sjs_execute = function(code, rt)
+{
     /// Returns a string representing the stack contents.
     let stackdump = function(rt) {            
         let s = "Stack: [";
@@ -656,8 +660,8 @@ let sjs_execute = function(code, rt) {
 };
 
 // Create a runtime environment
-let sjs_rtlib = function() {
-    
+let sjs_rtlib = function()
+{    
     let rt = {code:[], ic:0, stack:[], dump:[]};
 
     //  AUXILIARY FUNCTIONS
