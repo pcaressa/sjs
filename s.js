@@ -26,6 +26,12 @@ let sjs_semicolon_expected = function(token)
     sjs_error(token.s != ";", "';' expected", token);
 }
 
+/// Raise an error on token.t != expected_token.
+let sjs_expected = function(token, expected_token)
+{
+    sjs_error(token.t != expected_token, "'" + expected_token + "' expected", token);
+}
+
 /// Return a string with a shallow representation of an object o.
 let sjs_object2string = function(o) {
     let s = "";
@@ -58,7 +64,7 @@ let sjs_scan = function(text)
     let ALNUM = ALPHA + DIGIT;
     
     // Enclose the text to scan between "{" and "}".
-    let toklist = [{s: "{", t: "delimiter", l:0, c:0}]; // list of all scanned tokens
+    let toklist = [{s: "{", t: "{", l:0, c:0}]; // list of all scanned tokens
     
     let line = 1;   // current line number
     let i_line = 0; // Index of 1st character of the current line
@@ -128,25 +134,33 @@ let sjs_scan = function(text)
         } else
         if (cc1 == '<=' || cc1 == '>=' || cc1 == '==' || cc1 == '!=' || cc1 == '+='
         || cc1 == '-=' || cc1 == '&&' || cc1 == '||' || cc1 == '++' || cc1 == '--') {
-            toklist.push({s: cc1, t: "delimiter", l: line, c: i - i_line});
+            toklist.push({s: cc1, t: cc1, l: line, c: i - i_line});
             i += 2;
         } else
         if ("-+*/<>=!.,;:()[]{}".includes(c)) {
-            toklist.push({s: c, t: "delimiter", l: line, c: i - i_line});
+            toklist.push({s: c, t: c, l: line, c: i - i_line});
             ++ i;
         } else {
             sjs_error(true, ": Syntax error: '" + c + "' at " + line + ":" + (i - i_line));
     }}
     // Enclose the text to scan between "{" and "}".
-    toklist.push({s: "}", t: "delimiter", l:0, c:0});
+    toklist.push({s: "}", t: "}", l:0, c:0});
 
     return toklist;
 }
 
 /* _________________________________________________________________________
 
-    CODE GENERATOR
+    SYNTACTIC ANALYZER AND CODE GENERATOR
    _________________________________________________________________________ */
+
+/// Compile a sequence s of objects into rt.code.
+let sjs_compile = function(rt, s)
+{
+    for (let i = 0; i < s.length; ++ i) {
+        rt.code.push(s[i]);
+    }
+}
 
 /** Compile a value to be pushed on the stack at runtime. */
 let sjs_compile_value = function(rt, v)
@@ -154,6 +168,11 @@ let sjs_compile_value = function(rt, v)
     rt.code.push(rt.PUSH);
     rt.code.push(v);
 };
+
+/* _________________________________________________________________________
+
+                ANALYZE AND COMPILE JS EXPRESSIONS
+   _________________________________________________________________________ */
 
 /** Compile a list of expressions from tl into an array which is pushed on the
     stack at runtime; the endchr is the one checked against the end of the list.
@@ -164,10 +183,15 @@ let sjs_compile_array = function(tl, rt, endchr)
         [v1, ..., vk] is compiled as [] v1 ARRADD ... vk ARRADD */
     sjs_compile_value(rt, []);
     let token = tl[0];
-    while (token.s != endchr) {
-        token = sjs_compile_expression(tl, rt);
-        rt.code.push(rt.ARRADD);    // a v ARRADD -> a[a.length] = v and a on the stack
-        sjs_error(token.s != endchr && token.s != ",", "'" + endchr + "' or ',' expected", token);
+    if (token.s == endchr) {
+        // Empty list: drop the end of list token and return
+        tl.shift();
+    } else {
+        do {
+            token = sjs_compile_expression(tl, rt);
+            rt.code.push(rt.ARRADD);    // a v ARRADD -> a[a.length] = v and a on the stack
+        } while (token.s == ",");
+        sjs_expected(token, endchr, token);
     }
 };
 
@@ -179,15 +203,20 @@ let sjs_compile_object = function(tl, rt)
         {n1:v1, ..., nk:vk} is compiled as {} n1 v1 OBJADD ... nk vk OBJADD */
     sjs_compile_value(rt, {});
     let token = tl[0];  // expect name or '}'
-    while (token.s != "}") {
-        token = tl.shift();
-        sjs_error(token.t != "name", "'}' or 'name:value' expected in literal object " + token.s, token);
-        sjs_compile_value(rt, token.s); // bare string, OBJADD expect this
-        token = tl.shift(); // this ought to be ':'
-        sjs_error(token.s != ":", "':' expected in literal object", token);
-        token = sjs_compile_expression(tl, rt);
-        rt.code.push(rt.OBJADD);    // obj name value OBJADD -> obj[name] = value and obj on the stack
-        sjs_error(token.s != "}" && token.s != ",", "'}' or ',' expected", token);
+    if (token.s == "}") {
+        // Empty object: drop the "}" token and return
+        tl.shift();
+    } else {
+        do {
+            token = tl.shift();
+            sjs_expected(token, "name");
+            sjs_compile_value(rt, token.s); // bare string, OBJADD expect this
+            token = tl.shift(); // this ought to be ':'
+            sjs_expected(token, ":");
+            token = sjs_compile_expression(tl, rt);
+            rt.code.push(rt.OBJADD);    // obj name value OBJADD -> obj[name] = value and obj on the stack
+        } while (token.s == ",");
+        sjs_expected(token, "}", token);
     }
 };
 
@@ -201,23 +230,20 @@ let sjs_compile_function = function(tl, rt)
         time when CLOSURE is executed. The result is then put on the stack. */
     // Parameters.
     let token = tl.shift();
-    sjs_error(token.s != "(", "'(' expected in function definition", token);
+    sjs_expected(token, "(");
     let parameters = [];
     token = tl.shift();
     while (token.s != ")") {
-        sjs_error(token.t != "name", "name expected in function definition", token);
+        sjs_expected(token, "name");
         parameters.push(token.s);
         token = tl.shift();
         if (token.s == ",") {
             token = tl.shift()
         } else {
-            sjs_error(token.s != ")", "')' expected in function definition", token);
+            sjs_expected(token, ")");
     }}
     // Function's body
-    rt.code.push(rt.CLOSURE);
-    rt.code.push(parameters);
-    sjs_error(tl[0].s != "{", "'{' expected in function definition", token);
-    rt.code.push(sjs_compile(tl).code);
+    sjs_compile(rt, [rt.CLOSURE, parameters, sjs_compile_block(tl).code]);
 };
 
 /** Compile an operand into rt.code parsing it from the token list tl, which is
@@ -237,15 +263,14 @@ let sjs_compile_operand = function(token, tl, rt)
     else if (token.s == "{") { sjs_compile_object(tl, rt); }
     else if (token.s == "[") { sjs_compile_array(tl, rt, "]"); }
     // Check against variable names
-    else if (token.t == "name") { rt.code.push(rt.REF); rt.code.push(token.s); }
+    else if (token.t == "name") { sjs_compile(rt, [rt.REF, token.s]); }
+    // If all else fails, we expect a subexpression "(expr)"
+    else if (token.s == "(") { sjs_expected(sjs_compile_expression(tl, rt), ")"); }
     else {
-        // If all else fails, we expect a subexpression "(expr)"
-        sjs_error(token.s != "(", "Syntax error: " + token.s, token);
-        token = sjs_compile_expression(tl, rt);
-        sjs_error(token.s != ")", "')' expected", token);
+        sjs_error(true, "Syntax error: " + token.s, token);
     }
     return tl.shift();
-}
+};
 
 /** Compiles an expression into rt.code parsing it from the token list tl,
     which is consumed doing so. The first token following the expression is
@@ -261,16 +286,16 @@ let sjs_compile_expression = function(tl, rt)
     let stack = []; // stack where operators are pushed before being compiled
 
     let PRIORITIES = {
-        "fake": -1, // fake operator, needed in while condition in sjs_compile_stack.
-        "=": 0, "+=": 0, "-=": 0, "||": 10, "&&": 15, "==": 20, "!=": 20,
-        "<": 21, ">": 21, "<=": 21, ">=": 21, "+": 30, "-": 30, "*": 40,
-        "/": 40, "-NEG-": 50, "!": 50, "++": 50, "--": 50, "new": 60
+        "fake": 0, // fake operator, needed in while condition in sjs_compile_stack.
+        "=": 5, "+=": 5, "-=": 5, "||": 10, "&&": 15, "==": 20, "!=": 20,
+        "<": 25, ">": 25, "<=": 25, ">=": 25, "+": 30, "-": 30, "*": 40,
+        "/": 40, "-NEG-": 50, "!": 50, "++": 50, "--": 50, "typeof": 60
     };
     let OPERATORS = {
         "=": rt.SET, "+=": rt.SETADD, "-=": rt.SETSUB, "==": rt.EQ,
         "!=": rt.NE, "<": rt.LT, ">": rt.GT, "<=": rt.LE, ">=": rt.GE,
         "+": rt.ADD, "-": rt.SUB, "*": rt.MUL, "/": rt.DIV, "-NEG-": rt.NEG,
-        "!": rt.NOT, "++": rt.INC, "--": rt.DEC
+        "!": rt.NOT, "++": rt.INC, "--": rt.DEC, "typeof": rt.TYPEOF
     };
 
     /// Compile all operators in the stack with priority > the priority of opt.
@@ -286,13 +311,13 @@ let sjs_compile_expression = function(tl, rt)
     }}};
     
     let cstack = [];    // Stack used for forward reference in && and ||
-    let token;  // last token parsed from tl inside the do{...} loop
+    let token;  // last parsed token from tl inside the do{...} loop
     let again;  // do{...} loop iteration condition, defined inside the loop
     do {
         token = tl.shift(); // Prefix operator or operand expected
         
         // Is token a prefix operator?
-        while (token.s == "!" || token.s == "-" || token.s == "--" || token.s == "++") {
+        while (token.s == "!" || token.s == "-" || token.s == "--" || token.s == "++" || token.s == "typeof") {
             // A minus token means a negation
             compile_stack(token.s == "-" && "-NEG-" || token.s);
             stack.push(token.s);
@@ -310,13 +335,13 @@ let sjs_compile_expression = function(tl, rt)
             } else
             if (token.s == ".") {   // Member operator x.y
                 token = tl.shift();
-                sjs_error(token.t != "name", "Name expected as object attribute", token);
+                sjs_expected(token, "name");
                 sjs_compile_value(rt, token.s);
                 rt.code.push(rt.DEREF);
             } else {
                 // Assert token.s == "[";  Member operator x[y]
                 token = sjs_compile_expression(tl, rt);
-                sjs_error(token.s != "]", "']' expected");
+                sjs_expected(token, "]");
                 rt.code.push(rt.DEREF);
             }
             token = tl.shift();
@@ -338,24 +363,158 @@ let sjs_compile_expression = function(tl, rt)
                     be compiled. Now save the position where to store it
                     in the "control stack". */
                 cstack.push(rt.code.length);
-                rt.code.push(null); // placeholder
+                rt.code.push(0);    // 0 overwritten in compile_stack.
         }}
     } while (again);
 
-    // If there are operators on the stack, compile them.
+    // If there are operators on the stack, compile them all.
     compile_stack("fake");
 
     return token;
 };
 
-/// Compile a "let x1 = v1,...,xn=vn;" instruction from tl at rt.
+/* _________________________________________________________________________
+
+        ANALYZE AND COMPILE JS STATEMENTS
+   _________________________________________________________________________ */
+
+/** Compile the do {p} while (c) statement. Assume the "do" token
+    to be already shifted from tl. */
+let sjs_compile_do = function(tl, rt)
+{
+    /*  do {p} while(c) is compiled as
+        again: p c JPNZ again   */
+    // New scope introduced at runtime
+    rt.code.push(rt.PUSHENV);
+    let again = rt.code.length; // where to jump to repeat the loop
+    // Compile the do body p appending it to rt.code
+    rt.code = rt.code.concat(sjs_compile_block(tl).code);
+    sjs_error(tl.shift().s != "while", "'while' expected");
+    token = sjs_compile_expression(tl, rt);
+    sjs_semicolon_expected(token);
+    sjs_compile(rt, [rt.JPNZ, again - rt.code.length, rt.POPENV]);
+};
+
+/** Compile the various forms of the for(..) {p} statement.
+    Assume the "for (" tokens to be already shifted from tl. */
+let sjs_compile_for = function(tl, rt)
+{
+    sjs_expected(tl.shift(), "(");
+    if (tl[0].s == "let" && tl[1].t == "name" && tl[2].s == "in") {
+        /*  for (let s in e) {p} is compiled as:
+                    PUSH s PUSH null LET    Create variable s
+                    o OBJATTR               Push the array of o attributes
+            again:  DUP JPZ leave           If the array is empty then finish
+                    ARRPOP PUSH s SWAP SET  s = array[0]
+                    p                       execute body
+                    JP again                repeat loop
+            leave:  DROP                    array no more needed    */
+        // Skip "let s in" taking note of s
+        tl.shift();
+        let s = tl.shift();
+        tl.shift();
+        // Compile the for (let s in e) header.
+        sjs_compile(rt, [rt.PUSHENV, rt.PUSH, s, rt.PUSH, null, rt.LET]);
+        sjs_expected(sjs_compile_expression(tl, rt), ")");
+        rt.code.push(rt.OBJATTR);
+        let again = rt.code.length;
+        let leave = again + 2;  // index of the null value after JPZ
+        sjs_compile(rt, [rt.DUP, rt.JPZ, null, rt.ARRPOP, rt.PUSH, s, rt.SWAP, rt.SET]);
+        // Compile the block {p} and append it to the current rt.code.
+        rt.code = rt.code.concat(sjs_compile_block(tl).code);
+        rt.code.push(rt.JP);
+        rt.code.push(again - rt.code.length);
+        rt.code[leave] = rt.code.length - leave;
+        sjs_compile(rt, [rt.DROP, rt.POPENV]);
+    } else {
+        /*  for (a; c; i) {p} is compiled as:
+                    a
+            again:  c JPZ leave p i JP again
+            leave:              */
+        rt.code.push(rt.PUSHENV);
+        // Compile a
+        if (tl[0].s == "let") {
+            // Skip "let" since compile_let expect this.
+            tl.shift();
+            sjs_compile_let(tl, rt);
+        } else {
+            token = sjs_compile_expression(tl, rt);
+            sjs_semicolon_expected(token);
+        }
+        // Compile c
+        let again = rt.code.length;
+        token = sjs_compile_expression(tl, rt);
+        sjs_semicolon_expected(token);
+        // Compile JPZ leave
+        rt.code.push(rt.JPZ);
+        let leave = rt.code.length; // where to jump to repeat the loop
+        rt.code.push(0);            // 0 will be overwrittem by the actual value
+        // Compile i in a separate list
+        let code_saved = rt.code;
+        rt.code = [];
+        token = sjs_compile_expression(tl, rt);
+        sjs_expected(token, ")");
+        let loop = rt.code;
+        // Now compile p appending it to rt.code
+        rt.code = code_saved.concat(sjs_compile_block(tl).code);
+        // Append the increment/decrement part
+        rt.code = rt.code.concat(loop);
+        // Compile JP again to repeat the while condition
+        sjs_compile(rt, [rt.JP, again - rt.code.length]);
+        // Compile the offset for the JPZ leave here.
+        rt.code[leave] = rt.code.length - leave;
+        // Back to the old scope
+        rt.code.push(rt.POPENV);
+    }
+};
+
+/** Compile if (e) {p1} else {p2}. Assume the "if" token to be
+    already shifted from tl. */
+let sjs_compile_if = function(tl, rt)
+{
+    /*  if (c) {p1} else {p2} is compiled as
+            c JPZ other p1 JP after other: p2 after:
+        if (c) {p1} is compiled as
+            c JPZ other p1 other: */
+    // New scope introduced at runtime
+    rt.code.push(rt.PUSHENV);
+    // Compile the (c) condition
+    sjs_expected(tl.shift(), "(");
+    sjs_expected(sjs_compile_expression(tl, rt), ")");
+    /*  Now compile a JPZ to the first instruction after the if:
+        that'll be determined after compiling the if-else, so we keep
+        track of the index of the code element where this information
+        will be stored after the if-else has been compiled. */
+    let other = rt.code.length + 1; // index of 0 in the following s
+    sjs_compile(rt, [rt.JPZ, 0]);   // 0 to be overwritten later!
+    // Now compile p1 appending it to rt.code
+    rt.code = rt.code.concat(sjs_compile_block(tl).code);
+    if (tl[0].s != "else") {
+        // The if (c) {p1} has been compiled: let JPZ jump here.
+        rt.code[other] = rt.code.length - other;
+    } else {
+        tl.shift();     // skip "else"
+        let after = rt.code.length + 1; // index of 0 in the following s
+        sjs_compile(rt, [rt.JP, 0]);    // to be overwritten later!
+        // Let JPZ (after if) jump here.
+        rt.code[other] = rt.code.length - other;
+        // Now compile the else body p2 appending it to rt.code
+        rt.code = rt.code.concat(sjs_compile_block(tl).code);
+        // The if (c) {p1} else {p2} has been compiled: let JP jump here.
+        rt.code[after] = rt.code.length - after;
+    }
+    // Back to the old scope
+    rt.code.push(rt.POPENV);
+};
+
+/** Compile a "let x1 = v1,...,xn=vn;" instruction from tl at rt.
+    Assume the "let" token to be already shifted from tl. */
 let sjs_compile_let = function(tl, rt)
 {
-    // Assume "let" has already been parsed.
     let token;
     do {
         token = tl.shift();
-        sjs_error(token.t != "name", "Name expected", token);
+        sjs_expected(token, "name");
         sjs_compile_value(rt, token.s);
         token = tl.shift();
         if (token.s == "=") {
@@ -367,162 +526,55 @@ let sjs_compile_let = function(tl, rt)
         rt.code.push(rt.LET);
     } while (token.s == ",");
     sjs_semicolon_expected(token);
-}
+};
 
-/** Given a token list produces a runtime object containing the compiled
-    code. */
-let sjs_compile = function(tl)
+/** Compile while (c) {p}. Assume the "while" token to be
+    already shifted from tl. */
+let sjs_compile_while = function(tl, rt)
 {
-    let rt = sjs_rtlib();
+    /*  while (c) {p} is compiled as
+        again: (c) JPZ leave p JP again leave:  */
+    // New scope introduced at runtime
+    rt.code.push(rt.PUSHENV);
+    // Compile the (c) condition
+    let again = rt.code.length; // jump here to repeat the loop
+    sjs_expected(tl.shift(), "(");
+    sjs_expected(sjs_compile_expression(tl, rt), ")");
+    /*  Now compile a JPZ to the first instruction after the while:
+        that'll be determined after compiling the loop, so we keep
+        track of the index of the code element where this information
+        will be stored after the loop has been compiled. */
+    let leave = rt.code.length + 1; // index of 0 in the following s
+    sjs_compile(rt, [rt.JPZ, 0]);   // 0 to be overwritten later!
+    // Now compile p
+    rt.code = rt.code.concat(sjs_compile_block(tl).code);
+    // Compile JP again to repeat the while condition
+    sjs_compile(rt, [rt.JP, again - rt.code.length - 1]);
+    // Compile the offset for the JPZ leave here.
+    rt.code[leave] = rt.code.length - leave;
+    // Back to the old scope
+    rt.code.push(rt.POPENV);
+};
+
+/** Given a token list produce a runtime object containing the compiled code.
+    The token list should ALWAYS be a block {...}. */
+let sjs_compile_block = function(tl)
+{
+    let rt = sjs_rtlib();   // Need to quote runtime instructions
     
     let token = tl.shift();
-    sjs_error(token.s != "{", "Bad token list", token);
+    sjs_expected(token, "{");
 
-    // Brutally consume the token list as far as it is parsed
+    // Consume the token list as far as it is parsed
     while ((token = tl.shift()).s != "}") {
-        if (token.s == ";") { /* Empty statement, nothing to compile! */ } else
-        if (token.s == "do") {
-            /*  do {p} while(c) is compiled as
-                again: p c JPNZ again   */
-            // New scope introduced at runtime
-            rt.code.push(rt.PUSHENV);
-            let again = rt.code.length; // where to jump to repeat the loop
-            // Compile the do body p appending it to rt.code
-            rt.code = rt.code.concat(sjs_compile(tl).code);
-            token = tl.shift();
-            sjs_error(token.s != "while", "'while' expected in a 'do' loop", token);
-            token = sjs_compile_expression(tl, rt);
-            sjs_semicolon_expected(token);
-            rt.code.push(rt.JPNZ);
-            rt.code.push(again - rt.code.length);
-            // Back to the old scope
-            rt.code.push(rt.POPENV);
-        }
-        else if (token.s == "for" && tl[0].s == "(" && tl[1].s == "let" && tl[2].t == "name" && tl[3].s == "in") {
-            /*
-                si compila un codice che costruisce l'array di tutte le
-                chiavi dell'oggetto, e poi si fa shift di ciascuna chiave
-                esguendo il corpo del loop fino a che la lista non si sia
-                svuotata
-            */
-            /*  for (let s in e) {p} is compiled as e OBJSCAN s p */
-            let s = tl[2];
-            // Skip "for ( let s in"
-            tl.shift(); tl.shift(); tl.shift(); tl.shift();
-            rt.code.push(rt.PUSHENV);
-            // Compile e
-            token = sjs_compile_expression(tl, rt);
-            sjs_error(token.s != ")", "')' expected", token);
-            // Compile p
-            let code_saved = rt.code;
-            rt.code = [];
-            token = sjs_compile_expression(tl, rt);
-            let p = rt.code;
-            rt.code = code_saved;
-            rt.push(rt.OBJSCAN);
-            rt.push(s);
-            rt.push(p);
-            rt.code.push(rt.POPENV);
-        } else
-        if (token.s == "for" && tl[0].s == "(" && tl[1].s == "let" && tl[2].t == "name" && tl[3].s == "=") {
-            //FOR CON ASSEGNAZIONE
-        } else
-        if (token.s == "for" && tl[0].s == "(") {
-            //FOR SENZA ASSEGNAZIONE
-        }
-        
-        else if (token.s == "for") {
-            /*  for (a1; c; a2) {p} is compiled as
-                a1 again: c JPZ leave p a2 JP again leave:
-                Notice: this version of JS does not allow neither a1, not c
-                not a1 to be empty */
-            sjs_error(tl.shift().s != "(", "'(' expected after 'for'", token);
-            // New scope introduced at runtime
-            rt.code.push(rt.PUSHENV);
-            // Compile a1
-            /* Expect "let" name "=" expr | "let" name "in" expr | expr */
-            token = tl.shift();
-            if (token.s == "let") {
-                if (tl[1].s == "in") {
-                }
-                else { sjs_compile_let(tl, rt); }
-            } else {
-                // expression";" expected
-                tl.unshift(token);
-                token = sjs_compile_expression(tl, rt);
-                sjs_semicolon_expected(token);
-            }
-            // Compile a2
-            let again = rt.code.length;
-            token = sjs_compile_expression(tl, rt);
-            sjs_semicolon_expected(token);
-            // Compile JPZ leave
-            rt.code.push(rt.JPZ);
-            let leave = rt.code.length; // where to jump to repeat the loop
-            rt.code.push(0);
-            // Compile a3 in a separate list
-            let code_saved = rt.code;
-            rt.code = [];
-            token = sjs_compile_expression(tl, rt);
-            sjs_error(token.s != ")", "')' expected", token);
-            let loop = rt.code;
-            // Now compile p appending it to rt.code
-            rt.code = code_saved.concat(sjs_compile(tl).code);
-            // Append the increment/decrement part
-            rt.code = rt.code.concat(loop);
-            // Compile JP again to repeat the while condition
-            rt.code.push(rt.JP);
-            rt.code.push(again - rt.code.length);
-            // Compile the offset for the JPZ leave here.
-            rt.code[leave] = rt.code.length - leave;
-            // Back to the old scope
-            rt.code.push(rt.POPENV);
-        }
-        else if (token.s == "if") {
-            /*  if (c) {p1} else {p2} is compiled as
-                    c JPZ other p1 JP after other: p2 after:
-                if (c) {p1} is compiled as
-                    c JPZ other p1 other: */
-            // New scope introduced at runtime
-            rt.code.push(rt.PUSHENV);
-            // Compile the if condition
-            token = sjs_compile_expression(tl, rt);
-            tl.unshift(token);  // restore token consumed by compile_expression
-            /*  Now compile a JPZ to the first instruction after the if:
-                that'll be determined after compiling the loop, so we keep
-                track of the index of the code element where this information
-                will be stored after the loop has been compiled. */
-            rt.code.push(rt.JPZ);
-            let other = rt.code.length; // index of the following item
-            rt.code.push(0);            // to be written later!
-            // Now compile the if body p1 appending it to rt.code
-            rt.code = rt.code.concat(sjs_compile(tl).code);
-            if (tl[0].s != "else") {
-                // The if(c){p1} has been compiled: let JPZ jump here.
-                rt.code[other] = rt.code.length - other;
-            } else {
-                tl.shift();     // skip "else"
-                rt.code.push(rt.JP);
-                let after = rt.code.length; // index of the following item
-                rt.code.push(0);            // to be written later!
-                // Let JPZ (after if) jump here.
-                rt.code[other] = rt.code.length - other;
-                // Now compile the else body p2 appending it to rt.code
-                rt.code = rt.code.concat(sjs_compile(tl).code);
-                // The if(c){p1}else{p2} has been compiled: let JP jump here.
-                rt.code[after] = rt.code.length - after;
-            }
-            // Back to the old scope
-            rt.code.push(rt.POPENV);
-        }
+        if (token.s == ";") { /* Empty statement, nothing to compile! */ }
+        else if (token.s == "do") { sjs_compile_do(tl, rt); }
+        else if (token.s == "for" ) { sjs_compile_for(tl, rt); }
+        else if (token.s == "if") { sjs_compile_if(tl, rt); }
         else if (token.s == "let") { sjs_compile_let(tl, rt); }
         else if (token.s == "return") {
-            if (tl[0].s != ";") {
-                token = sjs_compile_expression(tl, rt);
-            } else {
-                sjs_compile_value(rt, undefined);
-                token = tl.shift();
-            }
+            if (tl[0].s != ";") { token = sjs_compile_expression(tl, rt); }
+            else { sjs_compile_value(rt, undefined); token = tl.shift(); }
             rt.code.push(rt.RET);
             sjs_semicolon_expected(token);
         }
@@ -531,38 +583,15 @@ let sjs_compile = function(tl)
             rt.code.push(rt.THROW);
             sjs_semicolon_expected(token);
         }
-        else if (token.s == "while") {
-            /*  while (c) {p} is compiled as
-                again: (c) JPZ leave p JP again leave:  */
-            // New scope introduced at runtime
-            rt.code.push(rt.PUSHENV);
-            // Compile condition c
-            let again = rt.code.length; // jump here to continue the loop
-            token = sjs_compile_expression(tl, rt);
-            tl.unshift(token);  // restore token consumed by compile_expression
-            /*  Now compile JPZ leave: the offset leave will be determined
-                after compiling the loop, so we keep track of the index of the
-                code element where this information will be stored after the
-                loop has been compiled. */
-            rt.code.push(rt.JPZ);
-            let leave = rt.code.length; // index of the following item
-            rt.code.push(0);            // to be written later!
-            // Now compile p
-            rt.code = rt.code.concat(sjs_compile(tl).code);
-            // Compile JP again to repeat the while condition
-            rt.code.push(rt.JP);
-            rt.code.push(again - rt.code.length);
-            // Compile the offset for the JPZ leave here.
-            rt.code[leave] = rt.code.length - leave;
-            // Back to the old scope
-            rt.code.push(rt.POPENV);
-        }
+        else if (token.s == "while") { sjs_compile_while(tl, rt); }
         else {
             // Expression statement
             tl.unshift(token);
             token = sjs_compile_expression(tl, rt);
             sjs_semicolon_expected(token);
     }}
+    sjs_expected(token, "}");
+
     return rt;
 }
 
@@ -571,8 +600,7 @@ let sjs_compile = function(tl)
     RUNTIME
    _________________________________________________________________________ */
 
-
-/** The runtime rt, as returned by sjs_compile, is executed. If debug is
+/** The runtime rt, as returned by sjs_compile_block, is executed. If debug is
     not null, 0 nor undefined then execution is dumped on the console step
     by step. On error throw an exception, via sjs_error. */
 let sjs_run = function(rt, debug)
@@ -580,6 +608,8 @@ let sjs_run = function(rt, debug)
     // rt.env.$_outer_$ = environment at outer scope.
     rt.env = {alert: alert,
               console: {log: console.log},
+              Math: {ceil: Math.ceil, floor: Math.floor, round: Math.round,
+                     trunc: Math.trunc},
               Number: Number,
               prompt: prompt,
               String: String,
@@ -590,8 +620,7 @@ let sjs_run = function(rt, debug)
     sjs_execute(rt.code, rt);
 }
 
-/// Executes code in runtime environment rt: a new environment is
-//  created, whose $_outer_$ is rt.env.
+/// Executes code in runtime environment rt
 let sjs_execute = function(code, rt) {    
     
     /// Returns a string representing the stack contents.
@@ -607,7 +636,6 @@ let sjs_execute = function(code, rt) {
     let ic_saved = rt.ic;
     rt.code = code;
     rt.ic = 0;
-    //~ rt.env = {$_outer_$: rt.env};
 
     while (rt.ic < rt.code.length) {
         let ic = rt.ic;
@@ -625,7 +653,6 @@ let sjs_execute = function(code, rt) {
     // Restores original values
     rt.code = code_saved;
     rt.ic = ic_saved;
-    //~ rt.env = rt.env.$_outer_$;
 };
 
 // Create a runtime environment
@@ -633,10 +660,8 @@ let sjs_rtlib = function() {
     
     let rt = {code:[], ic:0, stack:[], dump:[]};
 
-    //
-    //  Auxiliary functions
-    //
-
+    //  AUXILIARY FUNCTIONS
+    
     /** Pop a reference r, deference it and increases its value by v: used by
         DEC, INC, SETADD, SETSUB. */
     rt.increase = function(v) {
@@ -665,10 +690,8 @@ let sjs_rtlib = function() {
         return r;
     };
     
-    //
     //  VM INSTRUCTION IMPLEMENTATION
-    //
-
+    
     /// ADD() pop y, pop x, push x + y
     rt.ADD = function(rt) { let y = rt.popval(); rt.stack.push(rt.popval() + y); };
     rt.ADD.$name = "ADD";
@@ -678,7 +701,7 @@ let sjs_rtlib = function() {
         let a = rt.popval();
         let f = rt.popval();
         
-        if (f.apply) { // Native JS function
+        if (f && f.apply) { // Native JS function
             rt.stack.push(f.apply(null, a));
         } else {
             /*  User defined function: saves rt.env, rt.code, rt.ic on the
@@ -686,7 +709,7 @@ let sjs_rtlib = function() {
                 to the closure code, set the values of actual parameters for the
                 formal ones and execute the code. */
             // f = {code: [...], env: e, length: 0, parameters: [x1,..,xn]}
-            sjs_error(f.parameters == undefined, f + "is not a function");
+            sjs_error(!f || f.parameters == undefined, f + " is not a function");
             // Prepare the environment rt.env for the function call
             rt.dump.push(rt.env);
             rt.env = {$_outer_$:f.env}; // closure environment outer to new one
@@ -943,5 +966,9 @@ c            // Restore the environment from rt.dump
     rt.THROW = function(rt) { throw rt.popval(); };
     rt.THROW.$name = "THROW";
 
+    /// pop v, push the string corresponding to the type of v
+    rt.TYPEOF = function(rt) { rt.stack.push(typeof(rt.popval())); };
+    rt.TYPEOF.$name = "TYPEOF";
+    
     return rt;
 };

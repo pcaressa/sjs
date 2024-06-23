@@ -102,7 +102,7 @@ function parse() {
         let w = window.open("/", "Token List");
         w.document.write("<h1>Token List</h1><table>");
         for (let i = 0; i < token_list.length; ++ i) {
-            w.document.write("<tr><td><b>" + token_list[i].s + "</b></td><td>" + token_list[i].t + "</td></tr>");
+            w.document.write("<tr><td><b>" + token_list[i].s + "</b></td><td>" + token_list[i].t + "</td><td>" + token_list[i].l + ":" + token_list[i].c + "</td></tr>");
         }
         w.document.write("</table>");
 }}
@@ -111,7 +111,7 @@ function compile() {
     if (token_list == null) {
         alert("Compile requires Parse");
     } else {
-        run_time = sjs_compile(token_list);
+        run_time = sjs_compile_block(token_list);
         console.log(run_time);
         if (verbose) {
             let w = window.open("/", "Compiled Code");
@@ -143,7 +143,7 @@ function execute(debug) {
 function dump() {
     verbose = !verbose;
     console.log("Popup: " + verbose);
-    document.getElementById("dump").innerHTML = verbose ? "Verbose" : "Quiet";
+    document.getElementById("dump").innerHTML = verbose ? "Verbose?" : "Quiet?";
 }
 
 function load(input) {
