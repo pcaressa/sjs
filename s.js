@@ -792,8 +792,8 @@ let sjs_rtlib = function()
     rt.DIV.$name = "MUL";
     
     /// DROP() pop x
-    rt.DUP = function(rt) { rt.stack.pop(); };
-    rt.DUP.$name = "DROP";
+    rt.DROP = function(rt) { rt.stack.pop(); };
+    rt.DROP.$name = "DROP";
 
     /// DUP() pop x, push x, push x
     rt.DUP = function(rt) { rt.stack.push(rt.stack[rt.stack.length - 1]); };
