@@ -25,6 +25,7 @@
         font-family:monospace;
         background-color: #222;
         color: #0F0;
+        border: white solid 1px;
     }
     div {
         font-face:monospace;
@@ -33,6 +34,10 @@
         width: 56em;
         //height: 24em;
         border: #ccc solid 1px;
+    }
+    table, tr, th, td {
+        border: 1px solid black;
+    }
 }
 </style>
 
@@ -41,12 +46,10 @@
 
 <!--<button type="button" onclick="load()">Load</button> -->
 <input type="file" onchange="load(this)" id="files" style="display:none"/><label for="files">Load</label>
-<button type="button" onclick="execute(false)">Execute</button>
+<button type="button" onclick="execute(false)">Run</button>
 <button type="button" onclick="execute(true)">Debug</button>
 <button type="button" onclick="parse()">Parse</button>
 <button type="button" onclick="compile()">Compile</button>
-<button type="button" onclick="run()">Run</button>
-<button id="dump" type="button" onclick="dump()">Quiet?</button>
 <br>
 <textarea contenteditable="true" id="textarea" rows="24" cols="80" ondrop="alert('TODO')" autofocus>
 
@@ -93,19 +96,6 @@ function(x) { return x + 1; }(10);
 
 let token_list = null;
 let run_time = {debug: false};
-let verbose = false;
-
-function parse() {
-    token_list = sjs_scan(document.getElementsByTagName("textarea").textarea.value);
-    console.log(token_list);
-    if (verbose) {
-        let w = window.open("/", "Token List");
-        w.document.write("<h1>Token List</h1><table>");
-        for (let i = 0; i < token_list.length; ++ i) {
-            w.document.write("<tr><td><b>" + token_list[i].s + "</b></td><td>" + token_list[i].t + "</td><td>" + token_list[i].l + ":" + token_list[i].c + "</td></tr>");
-        }
-        w.document.write("</table>");
-}}
 
 function compile() {
     if (token_list == null) {
@@ -113,37 +103,23 @@ function compile() {
     } else {
         run_time = sjs_compile_block(token_list);
         console.log(run_time);
-        if (verbose) {
-            let w = window.open("/", "Compiled Code");
-            w.document.write("<h1>Compiled Code</h1><table>");
-            for (let i = 0; i < run_time.code.length; ++ i) {
-                w.document.write("<code>[" + i + "] ");
-                if (run_time.code[i] && run_time.code[i].$name) {
-                    w.document.write(run_time.code[i].$name);
-                } else {
-                    w.document.write(sjs_object2string(run_time.code[i]));
-                }
-                w.document.write("</code></br>");
-}}}}
-
-function run(debug) {
-    if (run_time == null) {
-        alert("Run requires Compile");
-    } else {
-        sjs_run(run_time, debug);
-}}
+        let w = window.open("/", "Compiled Code");
+        w.document.write("<h1>Compiled Code</h1><table>");
+        for (let i = 0; i < run_time.code.length; ++ i) {
+            w.document.write("<code>[" + i + "] ");
+            if (run_time.code[i] && run_time.code[i].$name) {
+                w.document.write(run_time.code[i].$name);
+            } else {
+                w.document.write(sjs_object2string(run_time.code[i]));
+            }
+            w.document.write("</code></br>");
+}}}
 
 function execute(debug) {
     console.log("Debug: " + debug);
-    parse();
-    compile();
-    run(debug);
-}
-
-function dump() {
-    verbose = !verbose;
-    console.log("Popup: " + verbose);
-    document.getElementById("dump").innerHTML = verbose ? "Verbose?" : "Quiet?";
+    token_list = sjs_scan(document.getElementsByTagName("textarea").textarea.value);
+    run_time = sjs_compile_block(token_list);
+    sjs_run(run_time, debug);
 }
 
 function load(input) {
@@ -151,12 +127,23 @@ function load(input) {
     let reader = new FileReader();
     reader.onload = function() {
         document.getElementsByTagName("textarea").textarea.value = reader.result;
-        //console.log(reader.result);
     };
     reader.onerror = function() {
         alert(reader.error);
     };
     reader.readAsText(file);
+}
+
+function parse() {
+    token_list = sjs_scan(document.getElementsByTagName("textarea").textarea.value);
+    console.log(token_list);
+    let w = window.open("/", "Token List");
+    w.document.write("<h1>Token List</h1><table>");
+    w.document.write("<tr><th> # </th><td><b style='font-family:courier new'> Token </b></td><td> Type </td><td> line:column</td></tr>");
+    for (let i = 0; i < token_list.length; ++ i) {
+        w.document.write("<tr><td>" + i + "</td><td><b style='font-family:courier new'>" + token_list[i].s + "</b></td><td>" + token_list[i].t + "</td><td>" + token_list[i].l + ":" + token_list[i].c + "</td></tr>");
+    }
+    w.document.write("</table>");
 }
 
 </script>

@@ -20,29 +20,27 @@ let sjs_error = function(cond, msg, token)
     }
 };
 
-/// Raise an error on token if it is not ";".
-let sjs_semicolon_expected = function(token)
-{
-    sjs_error(token.s != ";", "';' expected", token);
-};
-
 /// Raise an error on token.t != expected_token.
 let sjs_expected = function(token, expected_token)
 {
     sjs_error(token.t != expected_token, "'" + expected_token + "' expected", token);
 };
 
-/// Return a string with a shallow representation of an object o.
+/** Return a string with a shallow representation of an object o.
+    Since an env can have cyclic references, we omit it when
+    parsing it in an object. */
 let sjs_object2string = function(o) {
-    let s = "";
+    let s = o;
     if (typeof(o) == "object" || typeof(o) == "function") {
-        s += "{ ";
+        s = "{ ";
         for (let x in o) {
-            s += x + " ";
+            if (x != "env") {
+                s += x + ":" + sjs_object2string(o[x]) + " ";
+            } else {
+                s += "env:{...} ";
+            }
         }
         s += "}";
-    } else {
-        s += o;
     }
     return s;
 };
@@ -78,7 +76,7 @@ let sjs_scan = function(text)
                 i_line = i + 1;
         }}
         return i;
-    }
+    };
     /*  skip_while(i, delims) = least j>i such that text[j] is not
         in delims. If no such j exists then return text.length. */
     let skip_while = function(i, delims) {
@@ -88,7 +86,7 @@ let sjs_scan = function(text)
                 i_line = i + 1;
         }}
         return i;
-    }
+    };
     let i = 0;
     while (i < text.length) {
         let c = text[i];
@@ -209,7 +207,7 @@ let sjs_compile_object = function(tl, rt)
     } else {
         do {
             token = tl.shift();
-            sjs_expected(token, "name");
+            sjs_error(token.t != "name" && token.t != "string", "Name or string expected as attribute", token);
             sjs_compile_value(rt, token.s); // bare string, OBJADD expect this
             token = tl.shift(); // this ought to be ':'
             sjs_expected(token, ":");
@@ -238,7 +236,7 @@ let sjs_compile_function = function(tl, rt)
         parameters.push(token.s);
         token = tl.shift();
         if (token.s == ",") {
-            token = tl.shift()
+            token = tl.shift();
         } else {
             sjs_expected(token, ")");
     }}
@@ -317,29 +315,29 @@ let sjs_compile_expression = function(tl, rt)
         token = tl.shift(); // Prefix operator or operand expected
         
         // Is token a prefix operator?
-        while (token.s == "!" || token.s == "-" || token.s == "--" || token.s == "++" || token.s == "typeof") {
+        while (token.t == "!" || token.t == "-" || token.t == "--" || token.t == "++" || token.t == "typeof") {
             // A minus token means a negation
-            compile_stack(token.s == "-" && "-NEG-" || token.s);
-            stack.push(token.s);
+            compile_stack(token.t == "-" && "-NEG-" || token.t);
+            stack.push(token.t);
             token = tl.shift();
         }
         // Operand expected in any case.
         token = sjs_compile_operand(token, tl, rt);
         
         // Is token a postfix operator?
-        while (token.s == "." || token.s == "(" || token.s == "[") {
-            if (token.s == "(") {   // Actual parameter list
+        while (token.t == "." || token.t == "(" || token.t == "[") {
+            if (token.t == "(") {   // Actual parameter list
                 // First of all takes the value of the function
                 sjs_compile_array(tl, rt, ")");
                 rt.code.push(rt.APPLY);
             } else
-            if (token.s == ".") {   // Member operator x.y
+            if (token.t == ".") {   // Member operator x.y
                 token = tl.shift();
                 sjs_expected(token, "name");
                 sjs_compile_value(rt, token.s);
                 rt.code.push(rt.DEREF);
             } else {
-                // Assert token.s == "[";  Member operator x[y]
+                // Assert token.t == "[";  Member operator x[y]
                 token = sjs_compile_expression(tl, rt);
                 sjs_expected(token, "]");
                 rt.code.push(rt.DEREF);
@@ -347,17 +345,17 @@ let sjs_compile_expression = function(tl, rt)
             token = tl.shift();
         }
         // Is there a binary operator?
-        again = PRIORITIES[token.s];    // if undefined no!
+        again = PRIORITIES[token.t];    // if undefined no!
         if (again) {
             // Compile elements in the stack with higher priorities
-            compile_stack(token.s);
-            stack.push(token.s);
+            compile_stack(token.t);
+            stack.push(token.t);
             /* Shortcuts operator need more work: they also compile a JUMP
                 and save the index of the element of code containing the
                 jump address, to be written after the second operand will
                 be compiled. */
-            if (token.s == "&&" || token.s == "||") {
-                rt.code.push(token.s == "&&" && rt.DUPJPZ || rt.DUPJPNZ);
+            if (token.t == "&&" || token.t == "||") {
+                rt.code.push(token.t == "&&" && rt.DUPJPZ || rt.DUPJPNZ);
                 /* The index where to jump shall be written at
                     rt.code[rt.code.length] after the second operand will
                     be compiled. Now save the position where to store it
@@ -382,17 +380,15 @@ let sjs_compile_expression = function(tl, rt)
     to be already shifted from tl. */
 let sjs_compile_do = function(tl, rt)
 {
-    /*  do {p} while(c) is compiled as
-        again: p c JPNZ again   */
-    // New scope introduced at runtime
-    rt.code.push(rt.PUSHENV);
+    /*  "do {p} while(c)" is compiled as "again: p c JPNZ again". */
+    rt.code.push(rt.PUSHENV);   // New scope introduced at runtime
     let again = rt.code.length; // where to jump to repeat the loop
-    // Compile the do body p appending it to rt.code
+    // Compile {p} appending it to rt.code
     rt.code = rt.code.concat(sjs_compile_block(tl).code);
     sjs_error(tl.shift().s != "while", "'while' expected");
-    token = sjs_compile_expression(tl, rt);
-    sjs_semicolon_expected(token);
-    sjs_compile(rt, [rt.JPNZ, again - rt.code.length, rt.POPENV]);
+    sjs_expected(sjs_compile_expression(tl, rt), ";");
+    // Compile a JPNZ to again to repeat the loop (notice the -1, is correct)
+    sjs_compile(rt, [rt.JPNZ, again - rt.code.length - 1, rt.POPENV]);
 };
 
 /** Compile the various forms of the for(..) {p} statement.
@@ -403,7 +399,7 @@ let sjs_compile_for = function(tl, rt)
     if (tl[0].s == "let" && tl[1].t == "name" && tl[2].s == "in") {
         /*  for (let s in e) {p} is compiled as:
                     PUSH s PUSH null LET    Create variable s
-                    o OBJATTR               Push the array of o attributes
+                    o OBJKEYS               Push the array of o attributes
             again:  DUP JPZ leave           If the array is empty then finish
                     ARRPOP PUSH s SWAP SET  s = array[0]
                     p                       execute body
@@ -416,21 +412,19 @@ let sjs_compile_for = function(tl, rt)
         // Compile the for (let s in e) header.
         sjs_compile(rt, [rt.PUSHENV, rt.PUSH, s, rt.PUSH, null, rt.LET]);
         sjs_expected(sjs_compile_expression(tl, rt), ")");
-        rt.code.push(rt.OBJATTR);
+        rt.code.push(rt.OBJKEYS);
         let again = rt.code.length;
         let leave = again + 2;  // index of the null value after JPZ
         sjs_compile(rt, [rt.DUP, rt.JPZ, null, rt.ARRPOP, rt.PUSH, s, rt.SWAP, rt.SET]);
         // Compile the block {p} and append it to the current rt.code.
         rt.code = rt.code.concat(sjs_compile_block(tl).code);
-        rt.code.push(rt.JP);
-        rt.code.push(again - rt.code.length);
+        // Compile a JP to again to repeat the loop (notice the -1, is correct)
+        sjs_compile(rt, [rt.JP, again - rt.code.length - 1]);
         rt.code[leave] = rt.code.length - leave;
         sjs_compile(rt, [rt.DROP, rt.POPENV]);
     } else {
         /*  for (a; c; i) {p} is compiled as:
-                    a
-            again:  c JPZ leave p i JP again
-            leave:              */
+            a again:  c JPZ leave p i JP again leave:   */
         rt.code.push(rt.PUSHENV);
         // Compile a
         if (tl[0].s == "let") {
@@ -438,17 +432,14 @@ let sjs_compile_for = function(tl, rt)
             tl.shift();
             sjs_compile_let(tl, rt);
         } else
-        if (tl[0].s == ";") {
-            // Empty assignment: skip the ";"
+        if (tl[0].s == ";") {   // Empty assignment: skip the ";"
             tl.shift();
         } else {
-            token = sjs_compile_expression(tl, rt);
-            sjs_semicolon_expected(token);
+            sjs_expected(sjs_compile_expression(tl, rt), ";");
         }
         // Compile c
         let again = rt.code.length;
-        token = sjs_compile_expression(tl, rt);
-        sjs_semicolon_expected(token);
+        sjs_expected(sjs_compile_expression(tl, rt), ";");
         // Compile JPZ leave
         rt.code.push(rt.JPZ);
         let leave = rt.code.length; // where to jump to repeat the loop
@@ -456,15 +447,14 @@ let sjs_compile_for = function(tl, rt)
         // Compile i in a separate list
         let code_saved = rt.code;
         rt.code = [];
-        token = sjs_compile_expression(tl, rt);
-        sjs_expected(token, ")");
+        sjs_expected(sjs_compile_expression(tl, rt), ")");
         let loop = rt.code;
         // Now compile p appending it to rt.code
         rt.code = code_saved.concat(sjs_compile_block(tl).code);
         // Append the increment/decrement part
         rt.code = rt.code.concat(loop);
-        // Compile JP again to repeat the while condition
-        sjs_compile(rt, [rt.JP, again - rt.code.length]);
+        // Compile a JP to again to repeat the loop (notice the -1, is correct)
+        sjs_compile(rt, [rt.JP, again - rt.code.length - 1]);
         // Compile the offset for the JPZ leave here.
         rt.code[leave] = rt.code.length - leave;
         // Back to the old scope
@@ -480,8 +470,6 @@ let sjs_compile_if = function(tl, rt)
             c JPZ other p1 JP after other: p2 after:
         if (c) {p1} is compiled as
             c JPZ other p1 other: */
-    // New scope introduced at runtime
-    rt.code.push(rt.PUSHENV);
     // Compile the (c) condition
     sjs_expected(tl.shift(), "(");
     sjs_expected(sjs_compile_expression(tl, rt), ")");
@@ -491,8 +479,10 @@ let sjs_compile_if = function(tl, rt)
         will be stored after the if-else has been compiled. */
     let other = rt.code.length + 1; // index of 0 in the following s
     sjs_compile(rt, [rt.JPZ, 0]);   // 0 to be overwritten later!
-    // Now compile p1 appending it to rt.code
+    // Now compile {p1} inside a new environment, appending it to rt.code
+    rt.code.push(rt.PUSHENV);
     rt.code = rt.code.concat(sjs_compile_block(tl).code);
+    rt.code.push(rt.POPENV);
     if (tl[0].s != "else") {
         // The if (c) {p1} has been compiled: let JPZ jump here.
         rt.code[other] = rt.code.length - other;
@@ -502,13 +492,20 @@ let sjs_compile_if = function(tl, rt)
         sjs_compile(rt, [rt.JP, 0]);    // to be overwritten later!
         // Let JPZ (after if) jump here.
         rt.code[other] = rt.code.length - other;
-        // Now compile the else body p2 appending it to rt.code
-        rt.code = rt.code.concat(sjs_compile_block(tl).code);
+        /*  Now compile the p2 appending inside a new environment, appending
+            it to rt.code. Instead of {p2} if may appear a if (...). */
+        // in turn, {} may be omitted.
+        if (tl[0].s == "if") {
+            tl.shift();
+            sjs_compile_if(tl, rt);
+        } else {
+            rt.code.push(rt.PUSHENV);
+            rt.code = rt.code.concat(sjs_compile_block(tl).code);
+            rt.code.push(rt.POPENV);
+        }
         // The if (c) {p1} else {p2} has been compiled: let JP jump here.
         rt.code[after] = rt.code.length - after;
     }
-    // Back to the old scope
-    rt.code.push(rt.POPENV);
 };
 
 /** Compile a "let x1 = v1,...,xn=vn;" instruction from tl at rt.
@@ -528,8 +525,8 @@ let sjs_compile_let = function(tl, rt)
             sjs_compile_value(rt, undefined);
         }
         rt.code.push(rt.LET);
-    } while (token.s == ",");
-    sjs_semicolon_expected(token);
+    } while (token.t == ",");
+    sjs_expected(token, ";");
 };
 
 /** Compile while (c) {p}. Assume the "while" token to be
@@ -550,9 +547,9 @@ let sjs_compile_while = function(tl, rt)
         will be stored after the loop has been compiled. */
     let leave = rt.code.length + 1; // index of 0 in the following s
     sjs_compile(rt, [rt.JPZ, 0]);   // 0 to be overwritten later!
-    // Now compile p
+    // Now compile {p}
     rt.code = rt.code.concat(sjs_compile_block(tl).code);
-    // Compile JP again to repeat the while condition
+    // Compile a JP to again to repeat the loop (notice the -1, is correct)
     sjs_compile(rt, [rt.JP, again - rt.code.length - 1]);
     // Compile the offset for the JPZ leave here.
     rt.code[leave] = rt.code.length - leave;
@@ -571,28 +568,28 @@ let sjs_compile_block = function(tl)
 
     // Consume the token list as far as it is parsed
     while ((token = tl.shift()).s != "}") {
-        if (token.s == ";") { /* Empty statement, nothing to compile! */ }
-        else if (token.s == "do") { sjs_compile_do(tl, rt); }
+        if (token.t == ";") { /* Empty statement, nothing to compile! */ }
+        else if (token.s == "do") { sjs_compile_do(tl, rt);}
         else if (token.s == "for" ) { sjs_compile_for(tl, rt); }
         else if (token.s == "if") { sjs_compile_if(tl, rt); }
         else if (token.s == "let") { sjs_compile_let(tl, rt); }
         else if (token.s == "return") {
-            if (tl[0].s != ";") { token = sjs_compile_expression(tl, rt); }
+            if (tl[0].t != ";") { token = sjs_compile_expression(tl, rt); }
             else { sjs_compile_value(rt, undefined); token = tl.shift(); }
             rt.code.push(rt.RET);
-            sjs_semicolon_expected(token);
+            sjs_expected(token, ";");
         }
         else if (token.s == "throw") {
             token = sjs_compile_expression(tl, rt);
             rt.code.push(rt.THROW);
-            sjs_semicolon_expected(token);
+            sjs_expected(token, ";");
         }
         else if (token.s == "while") { sjs_compile_while(tl, rt); }
         else {
             // Expression statement
             tl.unshift(token);
             token = sjs_compile_expression(tl, rt);
-            sjs_semicolon_expected(token);
+            sjs_expected(token, ";");
     }}
     sjs_expected(token, "}");
 
@@ -631,7 +628,7 @@ let sjs_execute = function(code, rt)
     let stackdump = function(rt) {            
         let s = "Stack: [";
         for (let i = 0; i < rt.stack.length; ++ i) {
-            s += sjs_object2string(rt.stack[i]) + " ";
+            s += sjs_object2string(rt.stack[i]) + ", ";
         }
         return s + "]";
     };
@@ -647,9 +644,9 @@ let sjs_execute = function(code, rt)
         if (rt.debug) {
             console.log(stackdump(rt));
             if (rt.code[ic].$name) {
-                console.log("[" + ic + "] " + rt.code[ic].$name)
+                console.log("[" + ic + "] " + rt.code[ic].$name);
             } else {
-                console.log("[" + ic + "] " + rt.code[ic])
+                console.log("[" + ic + "] " + rt.code[ic]);
             }
         }
         rt.code[ic](rt);
@@ -734,7 +731,7 @@ let sjs_rtlib = function()
             for (let i = 0; i < f.parameters.length; ++ i) {
                 rt.env[f.parameters[i]] = a[i]; // undefined if i >= a.length
             }
-c            // Restore the environment from rt.dump
+            // Restore the environment from rt.dump
             let saved = rt.dump.pop();
             rt.env = saved.env;
             rt.code = saved.code;
@@ -752,6 +749,14 @@ c            // Restore the environment from rt.dump
         rt.stack.push(a);
     };
     rt.ARRADD.$name = "ARRADD";
+
+    /// ARRPOP() pop a, x = a.pop(), push a, push x
+    rt.ARRPOP = function(rt) {
+        let a = rt.stack[rt.stack.length - 1];
+        let x = a.pop();
+        rt.push(x);
+    };
+    rt.ARRPOP.$name = "ARRPOP";
     
     /** CLOSURE() parse x, parse y, creates a closure with parameters the
         elements of x (a list of strings), body the code list y and environment
@@ -785,6 +790,14 @@ c            // Restore the environment from rt.dump
     /// DIV() pop y, pop x, push x / y
     rt.DIV = function(rt) { let y = rt.popval(); rt.stack.push(rt.popval() / y); };
     rt.DIV.$name = "MUL";
+    
+    /// DROP() pop x
+    rt.DUP = function(rt) { rt.stack.pop(); };
+    rt.DUP.$name = "DROP";
+
+    /// DUP() pop x, push x, push x
+    rt.DUP = function(rt) { rt.stack.push(rt.stack[rt.stack.length - 1]); };
+    rt.DUP.$name = "DUP";
 
     /// DUPJPNZ() pop x, if x != 0 push x and perform JP, else perform NOP.
     rt.DUPJPNZ = function(rt) {
@@ -887,18 +900,23 @@ c            // Restore the environment from rt.dump
     };
     rt.OBJADD.$name = "OBJADD";
     
-    /** pop x, parse s, parse c, define a variable s, for each attribute in x
-        set s to that attribute and executes c. */
+    /// OBJKEYS() pop x, push the list of keys of object x.
+    rt.OBJKEYS = function(rt) { rt.stack.push(Object.keys(rt.stack.pop())); };
+    rt.OBJKEYS.$name = "OBJKEYS";
+    
+    /** pop x, parse s, parse c, define a variable s, for each attribute a in x
+        set s = a and executes c. */
     rt.OBJSCAN = function(rt) {
         let x = rt.popval();
         let s = rt.code[rt.ic];
         ++ rt.ic;
         let c = rt.code[rt.ic];
         ++ rt.ic;
-        rt.env[s] = undefined;
+        rt.env[s] = undefined;  // in case x = {}
         rt.dump.push({code:rt.code, ic:rt.ic});
         rt.code = c;
-        for (rt.env[s] in x) {
+        for (let a in x) {
+            rt.env[s] = a;
             rt.ic = 0;
             sjs_execute(rt);
         }
@@ -937,7 +955,7 @@ c            // Restore the environment from rt.dump
     rt.REF.$name = "REF";
 
     /// RET() ends the execution of the current rt.code
-    rt.RET = function(rt) { rt.ic = rt.code.length; }
+    rt.RET = function(rt) { rt.ic = rt.code.length; };
     rt.RET.$name = "RET";
     
     /// SET() pop v, pop x, { x = v; }, push v
@@ -965,6 +983,14 @@ c            // Restore the environment from rt.dump
     /// SUB() pop y, pop x, push x - y
     rt.SUB = function(rt) { let y = rt.popval(); rt.stack.push(rt.popval() - y); };
     rt.SUB.$name = "SUB";
+
+    /// SWAP() pop x, pop y, push x, push y
+    rt.SWAP = function(rt) {
+        let x = rt.stack.pop(), y = rt.stack.pop();
+        rt.push(x);
+        rt.push(y);
+    };
+    rt.SWAP.$name = "SWAP";
 
     /// pop x, throw exception x
     rt.THROW = function(rt) { throw rt.popval(); };
