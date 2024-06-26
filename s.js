@@ -341,8 +341,9 @@ let sjs_compile_expression = function(tl, rt)
         // (Notice: check tokens via token.t unless is a name, string, number).
         while (token.t == "!" || token.t == "-" || token.t == "--" || token.t == "++" || token.t == "typeof" || token.t == "new") {
             // A minus token means a negation
-            compile_stack(token.t == "-" && "-NEG-" || token.t);
-            stack.push(token.t);
+            let t = token.t == "-" && "-NEG-" || token.t;
+            compile_stack(t);
+            stack.push(t);
             token = tl.shift();
         }
         // Operand expected in any case.
@@ -1024,10 +1025,10 @@ let sjs_rtlib = function()
     rt.PUSH = function(rt) {
         let v = rt.code[rt.ic];
         ++ rt.ic;
-        if (v.constructor == Array) {
+        if (v && v.constructor == Array) {
             rt.stack.push(v.slice());
         } else
-        if (v.constructor == Object) {
+        if (v && v.constructor == Object) {
             rt.stack.push(Object.assign({}, v));
         } else {
             rt.stack.push(v);
