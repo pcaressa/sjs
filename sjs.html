@@ -35,10 +35,6 @@
         //height: 24em;
         border: #ccc solid 1px;
     }
-    table, tr, th, td {
-        border: 1px solid black;
-    }
-}
 </style>
 
 </head>
@@ -52,6 +48,7 @@
 <button type="button" onclick="compile()">Compile</button>
 <br>
 <textarea contenteditable="true" id="textarea" rows="24" cols="80" ondrop="alert('TODO')" autofocus>
+if ("123".includes("1")) {alert(1);}
 
 let f = function(x) {
   return function(y) {
@@ -98,22 +95,19 @@ let token_list = null;
 let run_time = {debug: false};
 
 function compile() {
-    if (token_list == null) {
-        alert("Compile requires Parse");
-    } else {
-        run_time = sjs_compile_block(token_list);
-        console.log(run_time);
-        let w = window.open("/", "Compiled Code");
-        w.document.write("<h1>Compiled Code</h1><table>");
-        for (let i = 0; i < run_time.code.length; ++ i) {
-            w.document.write("<code>[" + i + "] ");
-            if (run_time.code[i] && run_time.code[i].$name) {
-                w.document.write(run_time.code[i].$name);
-            } else {
-                w.document.write(sjs_object2string(run_time.code[i]));
-            }
-            w.document.write("</code></br>");
-}}}
+    run_time = sjs_compile_block(sjs_scan(document.getElementsByTagName("textarea").textarea.value));
+    console.log(run_time);
+    let w = window.open("/", "Compiled Code");
+    w.document.write("<h1>Compiled Code</h1><table>");
+    for (let i = 0; i < run_time.code.length; ++ i) {
+        w.document.write("<code>[" + i + "] ");
+        if (run_time.code[i] && run_time.code[i].$name) {
+            w.document.write(run_time.code[i].$name);
+        } else {
+            w.document.write(sjs_object2string(run_time.code[i]));
+        }
+        w.document.write("</code></br>");
+}}
 
 function execute(debug) {
     console.log("Debug: " + debug);
@@ -138,8 +132,9 @@ function parse() {
     token_list = sjs_scan(document.getElementsByTagName("textarea").textarea.value);
     console.log(token_list);
     let w = window.open("/", "Token List");
+    w.document.write("<style> table, td, th, tr {padding: 3px; border:1px solid black; border-collapse: collapse;} th { font-weight:bold; } </style>");
     w.document.write("<h1>Token List</h1><table>");
-    w.document.write("<tr><th> # </th><td><b style='font-family:courier new'> Token </b></td><td> Type </td><td> line:column</td></tr>");
+    w.document.write("<tr><th> # </th><th> Token </th><th> Type </th><th> line:column</th></tr>");
     for (let i = 0; i < token_list.length; ++ i) {
         w.document.write("<tr><td>" + i + "</td><td><b style='font-family:courier new'>" + token_list[i].s + "</b></td><td>" + token_list[i].t + "</td><td>" + token_list[i].l + ":" + token_list[i].c + "</td></tr>");
     }
