@@ -189,7 +189,7 @@ let sjs_compile_value = function(rt, v)
 let sjs_compile_array = function(tl, rt, endchr)
 {
     /*  An empty array is created and elements are added to it
-        [v1, ..., vk] is compiled as [] v1 ARRADD ... vk ARRADD */
+        [v1, ..., vk] is compiled as [] v1 ARRPUSH ... vk ARRPUSH */
     sjs_compile_value(rt, []);
     let token = tl[0];
     if (token.t == endchr) {
@@ -198,7 +198,7 @@ let sjs_compile_array = function(tl, rt, endchr)
     } else {
         do {
             token = sjs_compile_expression(tl, rt);
-            rt.code.push(rt.ARRADD);    // a v ARRADD -> a[a.length] = v and a on the stack
+            rt.code.push(rt.ARRPUSH);    // a v ARRPUSH -> a[a.length] = v and a on the stack
         } while (token.t == ",");
         sjs_expected(token, endchr, token);
     }
@@ -600,21 +600,16 @@ let sjs_compile_block = function(tl)
     while ((token = tl.shift()).s != "}") {
         //~ rt.code.push(rt.CLEAR);
         if (token.t == ";") { /* Empty statement, nothing to compile! */ }
-        //~ else if (token.s == "alert") {
-            //~ sjs_expected(sjs_compile_expression(tl, rt), ";");
-            //~ rt.code.push(rt.ALERT);
-        //~ }
-        //~ else if (token.s == "prompt") {
-            //~ sjs_expected(sjs_compile_expression(tl, rt), ";");
-            //~ rt.code.push(rt.PROMPT);
-        //~ }
         else if (token.t == "do") { sjs_compile_do(tl, rt);}
         else if (token.t == "for" ) { sjs_compile_for(tl, rt); }
         else if (token.t == "if") { sjs_compile_if(tl, rt); }
         else if (token.t == "let") { sjs_compile_let(tl, rt); }
         else if (token.t == "return") {
             if (tl[0].t != ";") { token = sjs_compile_expression(tl, rt); }
-            else { sjs_compile_value(rt, undefined); token = tl.shift(); }
+            else {
+                sjs_compile_value(rt, undefined);
+                token = tl.shift();
+            }
             rt.code.push(rt.RET);
             sjs_expected(token, ";");
         }
@@ -756,7 +751,7 @@ let sjs_rtlib = function()
                 to the closure code, set the values of actual parameters for the
                 formal ones and execute the code. */
             // f = {code: [...], env: e, length: 0, parameters: [x1,..,xn]}
-            sjs_error(!f || f.parameters == undefined, f + " is not a function");
+            sjs_error(!(f && "parameters" in f), f + " is not a function");
             // Prepare the environment rt.env for the function call
             rt.dump.push(rt.env);
             rt.env = {$_outer_$:f.env}; // closure environment outer to new one
@@ -772,13 +767,13 @@ let sjs_rtlib = function()
     rt.APPLY.$name = "APPLY";
     
     /** pop v, pop a, { a[a.length] = v; ++ a.length; } push a */
-    rt.ARRADD = function(rt) {
+    rt.ARRPUSH = function(rt) {
         let v = rt.popval();
         let a = rt.popval();
         a.push(v);
-        rt.stack.push(a);
+        rt.stack.push(a.slice());
     };
-    rt.ARRADD.$name = "ARRADD";
+    rt.ARRPUSH.$name = "ARRPUSH";
 
     /// pop a, x = a.pop(), push a, push x
     rt.ARRPOP = function(rt) {
@@ -1029,7 +1024,14 @@ let sjs_rtlib = function()
     rt.PUSH = function(rt) {
         let v = rt.code[rt.ic];
         ++ rt.ic;
-        rt.stack.push(v);
+        if (v.constructor == Array) {
+            rt.stack.push(v.slice());
+        } else
+        if (v.constructor == Object) {
+            rt.stack.push(Object.assign({}, v));
+        } else {
+            rt.stack.push(v);
+        }
     };
     rt.PUSH.$name = "PUSH";
     
@@ -1048,7 +1050,7 @@ let sjs_rtlib = function()
         ++ rt.ic;
         // Looks in the runtime environment
         for (let e = rt.env; e != null; e = e.$_outer_$) {
-            if (e[s] != undefined) {
+            if (s in e) {
                 rt.stack.push({$_ref_$: e, $_at_$:s});
                 return;
         }}
