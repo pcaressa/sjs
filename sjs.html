@@ -48,43 +48,9 @@
 <button type="button" onclick="compile()">Compile</button>
 <br>
 <textarea contenteditable="true" id="textarea" rows="24" cols="80" ondrop="alert('TODO')" autofocus>
-if ("123".includes("1")) {alert(1);}
-
-let f = function(x) {
-  return function(y) {
-    return x + y;
-  };
-};
-let s10 = f(10);
-let s20 = f(20);
-alert(s10(30));
-alert(s20(30));
-
 /*
-let i = 0, j = 0;
-while (i < 10) {
-  while (j < 10){
-    console.log("(" + i, "," + j + ")");
-    ++ j;
-  }
-  ++ i;
-}
+    OCCHIO CHE SONO PIENO DI BUG!!!
 */
-//~ let x = "alert(x)";
-//~ alert(x);
-//~ let a = [1,2,3], b = {a:1,b:2,c:3};
-//~ console.log(a);
-//~ let x = {a: "alpha", b:{a:1,b:null}, c: 0.001};
-//~ console.log(x);
-//~ x.b.b = 10;
-//~ ++ x.c;
-//~ console.log(x);
-//~ alert(1 && 0);
-//~ alert(1 || 0);
-//~ alert(0 && 1);
-//~ alert(0 || 1);
-//~ alert(function(x) { return x + 1; });
-function(x) { return x + 1; }(10);
 </textarea>
 <br>
 <span style="font-size:small">&copy; 2024 by Paolo Caressa</span>
@@ -100,11 +66,11 @@ function compile() {
     let w = window.open("/", "Compiled Code");
     w.document.write("<h1>Compiled Code</h1><table>");
     for (let i = 0; i < run_time.code.length; ++ i) {
-        w.document.write("<code>[" + i + "] ");
-        if (run_time.code[i] && run_time.code[i].$name) {
-            w.document.write(run_time.code[i].$name);
+        w.document.write("<code>[" + i + "|" + run_time.code[i].l + ":" + run_time.code[i].c + "] ");
+        if (run_time.code[i] && run_time.code[i].i.$name) {
+            w.document.write(run_time.code[i].i.$name);
         } else {
-            w.document.write(sjs_object2string(run_time.code[i]));
+            w.document.write(sjs_object2string(run_time.code[i].i));
         }
         w.document.write("</code></br>");
 }}
