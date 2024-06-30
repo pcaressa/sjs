@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Self JavaScript Playground</title>
 
-<script src="s.js"></script>
+<title>Self JavaScript Playground</title>
+
+<script src="S.js"></script>
 
 <style>
     * {
@@ -28,11 +29,11 @@
         border: white solid 1px;
     }
     div {
-        font-face:monospace;
+        font-family:monospace;
         background-color: white;
         color: black;
         width: 56em;
-        //height: 24em;
+        height: 24em;
         border: #ccc solid 1px;
     }
 </style>
@@ -40,7 +41,6 @@
 </head>
 <body>
 
-<!--<button type="button" onclick="load()">Load</button> -->
 <input type="file" onchange="load(this)" id="files" style="display:none"/><label for="files">Load</label>
 <button type="button" onclick="execute(false)">Run</button>
 <button type="button" onclick="execute(true)">Debug</button>
@@ -49,7 +49,7 @@
 <br>
 <textarea contenteditable="true" id="textarea" rows="24" cols="80" ondrop="alert('TODO')" autofocus>
 /*
-    OCCHIO CHE SONO PIENO DI BUG!!!
+    My God! It's full of bugs.
 */
 </textarea>
 <br>
@@ -57,11 +57,8 @@
 
 <script>
 
-let token_list = null;
-let run_time = {debug: false};
-
 function compile() {
-    run_time = sjs_compile_block(sjs_scan(document.getElementsByTagName("textarea").textarea.value));
+    let run_time = sjs_compile_block(sjs_scan(document.getElementsByTagName("textarea").textarea.value));
     console.log(run_time);
     let w = window.open("/", "Compiled Code");
     w.document.write("<h1>Compiled Code</h1><table>");
@@ -77,9 +74,7 @@ function compile() {
 
 function execute(debug) {
     console.log("Debug: " + debug);
-    token_list = sjs_scan(document.getElementsByTagName("textarea").textarea.value);
-    run_time = sjs_compile_block(token_list);
-    sjs_run(run_time, debug);
+    sjs_run(sjs_compile_block(sjs_scan(document.getElementsByTagName("textarea").textarea.value)), debug);
 }
 
 function load(input) {
@@ -95,7 +90,7 @@ function load(input) {
 }
 
 function parse() {
-    token_list = sjs_scan(document.getElementsByTagName("textarea").textarea.value);
+    let token_list = sjs_scan(document.getElementsByTagName("textarea").textarea.value);
     console.log(token_list);
     let w = window.open("/", "Token List");
     w.document.write("<style> table, td, th, tr {padding: 3px; border:1px solid black; border-collapse: collapse;} th { font-weight:bold; } </style>");

@@ -65,7 +65,9 @@ let sjs_scan = function(text)
     let ALPHA = "QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm_$";
     let DIGIT = "1234567890";
     let ALNUM = ALPHA + DIGIT;
-    let KEYWORDS = ["do", "else", "export", "false", "for", "function", "if", "in", "let", "new", "null", "return", "this", "throw", "true", "typeof", "undefined", "while"];
+    let KEYWORDS = ["do", "else", "false", "for", "function", "if", "in",
+                    "let", "new", "null", "return", "this", "throw",
+                    "true", "typeof", "undefined", "while"];
     
     // Enclose the text to scan between "{" and "}".
     let toklist = [{s: "{", t: "{", l:0, c:0}]; // list of all scanned tokens
@@ -141,8 +143,9 @@ let sjs_scan = function(text)
             toklist.push({s: text.slice(i0, i), t: "string", l: line, c: i0 - i_line});
             ++ i;
         } else
-        if (cc1 == '**' || cc1 == '<=' || cc1 == '>=' || cc1 == '==' || cc1 == '!=' || cc1 == '+='
-        || cc1 == '-=' || cc1 == '&&' || cc1 == '||' || cc1 == '++' || cc1 == '--') {
+        if (cc1 == '**' || cc1 == '<=' || cc1 == '>=' || cc1 == '=='
+        || cc1 == '!=' || cc1 == '+=' || cc1 == '-=' || cc1 == '&&'
+        || cc1 == '||' || cc1 == '++' || cc1 == '--') {
             toklist.push({s: cc1, t: cc1, l: line, c: i - i_line});
             i += 2;
         } else
@@ -590,7 +593,7 @@ let sjs_compile_while = function(tl, rt)
     The token list should ALWAYS be a block {...}. */
 let sjs_compile_block = function(tl)
 {
-    let rt = sjs_rtlib();   // Need to quote runtime instructions
+    let rt = sjs_runtime(); // Create runtime object containing VM instructions.
     
     let token = tl.shift();
     sjs_expected(token, "{");
@@ -643,9 +646,8 @@ let sjs_run = function(rt, debug)
         its outer environment. */
     rt.env = {$_outer_$: {alert: alert,
                           Array: Array,
-                          console: {log: console.log},
-                          Math: {ceil: Math.ceil, floor: Math.floor, round: Math.round,
-                                 trunc: Math.trunc},
+                          console: console,
+                          Math: Math,
                           Number: Number,
                           Object: Object,
                           prompt: prompt,
@@ -670,6 +672,7 @@ let sjs_execute = function(code, rt)
         return s + "]";
     };
     
+    // Saves code and ic since sjs_execute can be recursively called.
     let code_saved = rt.code;
     let ic_saved = rt.ic;
     rt.code = code;
@@ -694,7 +697,7 @@ let sjs_execute = function(code, rt)
 };
 
 // Create a runtime environment
-let sjs_rtlib = function()
+let sjs_runtime = function()
 {    
     let rt = {code:[], ic:0, stack:[], dump:[]};
 
@@ -1021,6 +1024,7 @@ let sjs_rtlib = function()
         let x = rt.popval(), y= rt.popval();
         rt.stack.push(y**x);
     };
+    rt.POW.$name = "POW";
 
     /// parse v, push v
     rt.PUSH = function(rt) {
