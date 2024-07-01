@@ -1,4 +1,4 @@
-/// \file s.js - Self Javascript
+/// \file S.js - Self Javascript
 
 "use strict";
 
@@ -43,8 +43,7 @@ let sjs_object2string = function(o) {
                         s += x + ":" + sjs_object2string(o[x]) + " ";
                     } else {
                         s += x + ":{...} ";
-                    }
-                }
+                }}
                 s += "}";
     }}}
     return s;
@@ -734,12 +733,13 @@ let sjs_runtime = function()
     rt.ALERT = function(rt) { alert(rt.popval()); };
     rt.ALERT.$name = "ALERT";
     
-    /// APPLY() pop a, pop f, apply function f to list x.
+    /// APPLY() pop a, pop f, apply function f to list a.
     rt.APPLY = function(rt) {
         let a = rt.popval();
         let f = rt.popval();
         
         if (f && f.apply) { // Native JS function
+            // functions without this
             if (f == alert || f == prompt) {
                 rt.stack.push(f.apply(undefined, a));
             } else {
@@ -760,6 +760,7 @@ let sjs_runtime = function()
                 rt.env[f.parameters[i]] = a[i]; // undefined if i >= a.length
             }
             sjs_execute(f.code, rt);    // Execute function body.
+            // The return value, if any, is on top of rt.stack.
             rt.env = rt.dump.pop();     // Restore the environment from rt.dump.
         }
         rt.$_this_$ = undefined;
@@ -782,9 +783,6 @@ let sjs_runtime = function()
         rt.stack.push(x);
     };
     rt.ARRPOP.$name = "ARRPOP";
-    
-    rt.CLEAR = function(rt) { rt.stack = []; };
-    rt.CLEAR.$name = "CLEAR";
     
     /** parse x, parse y, creates a closure with parameters the elements of x
         (a list of strings), body the code list y and environment a new one
@@ -988,7 +986,10 @@ let sjs_runtime = function()
     rt.OBJADD.$name = "OBJADD";
     
     /// pop x, push the list of keys of object x.
-    rt.OBJKEYS = function(rt) { rt.stack.push(Object.keys(rt.stack.pop())); };
+    rt.OBJKEYS = function(rt) {
+        let x = rt.popval();
+        rt.stack.push(Object.keys(x));
+    };
     rt.OBJKEYS.$name = "OBJKEYS";
     
     /** pop x, parse s, parse c, define a variable s, for each key a in x
@@ -1060,14 +1061,10 @@ let sjs_runtime = function()
                 rt.stack.push({$_ref_$: e, $_at_$:s});
                 return;
         }}
-        sjs_error(true, s + " is not defined", rt.code[rt.ic].i);
+        sjs_error(true, s + " is not defined", rt.code[rt.ic]);
     };
     rt.REF.$name = "REF";
 
-    /// Reset stack and this.
-    rt.RESET = function(rt) { rt.stack = []; };
-    rt.RESET.$name = "RESET";
-    
     /// Ends the execution of the current rt.code
     rt.RET = function(rt) { rt.ic = rt.code.length; };
     rt.RET.$name = "RET";
