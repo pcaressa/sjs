@@ -35,11 +35,12 @@ let sjs_object2string = function(o) {
     else if (o == undefined) { s = "undefined"; }
     else {
         if (typeof(o) == "object" || typeof(o) == "function") {
-            if (o && "$name" in o) { s = o.$name; }
+            if (o && o["$name"]) { s = o.$name; }
             else {
                 s = "{ ";
                 for (let x in o) {
-                    if (x != "env" && x != "$_outer_$") {
+                    // Prevent some possible infinite loop
+                    if (x != "$_ref_$" && x != "env" && x != "$_outer_$") {
                         s += x + ":" + sjs_object2string(o[x]) + " ";
                     } else {
                         s += x + ":{...} ";
@@ -236,9 +237,25 @@ let sjs_compile_object = function(tl, rt)
 let sjs_compile_function = function(tl, rt)
 {
     /*  A function(params) { body} is compiled as a sequence of three values:
-        [CLOSURE(), params, body]. The runtime CLOSURE routine allocates the
-        closure by defining its environmente as the runtime environment at the
-        time when CLOSURE is executed. The result is then put on the stack. */
+        [CLOSURE(), params, length, ...].
+    
+        - CLOSURE is the function to be executed at runtime to create the
+            closure and push it on the stack.
+        - params is the array [x1,...,xn] of formal parameters
+        - length is the number of items taken by the closure body, compiled
+            after length.
+        - ... is the compiled code of the closure body
+        
+        During runtime, the CLOSURE instruction creates a new environment,
+        inserts into it the formal parameters as variables whose initial
+        values are actual parameters and execute the closure body. Before
+        doing that, the rt.ic value is increased by length, so to point to
+        the first item after the closure body, so that the control will
+        resume from there. */
+
+
+TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+
     // Parameters.
     let token = tl.shift();
     sjs_expected(token, "(");
@@ -349,9 +366,7 @@ let sjs_compile_expression = function(tl, rt)
             token = tl.shift();
         }
         // Operand expected in any case.
-        alert(token);
         token = sjs_compile_operand(token, tl, rt);
-        alert(token);
         
         // Is token a postfix operator?
         while (token.t == "." || token.t == "(" || token.t == "[") {
@@ -505,6 +520,7 @@ let sjs_compile_if = function(tl, rt)
             c JPZ other p1 other: */
     // Compile the (c) condition
     sjs_expected(tl.shift(), "(");
+    sjs_compile(rt,[rt.PUSHENV], tl[0]);
     sjs_expected(sjs_compile_expression(tl, rt), ")");
     /*  Now compile a JPZ to the first instruction after the if:
         that'll be determined after compiling the if-else, so we keep
@@ -512,10 +528,8 @@ let sjs_compile_if = function(tl, rt)
         will be stored after the if-else has been compiled. */
     let other = rt.code.length + 1; // index of 0 in the following s
     sjs_compile(rt, [rt.JPZ, 0], tl[0]);   // 0 to be overwritten later!
-    // Now compile {p1} inside a new environment, appending it to rt.code
-    sjs_compile(rt,[rt.PUSHENV], tl[0]);
+    // Now compile {p1} appending it to rt.code
     rt.code = rt.code.concat(sjs_compile_block(tl).code);
-    sjs_compile(rt,[rt.POPENV], tl[0]);
     if (tl[0].s != "else") {
         // The if (c) {p1} has been compiled: let JPZ jump here.
         rt.code[other].i = rt.code.length - other;
@@ -527,18 +541,16 @@ let sjs_compile_if = function(tl, rt)
         rt.code[other].i = rt.code.length - other;
         /*  Now compile the p2 appending inside a new environment, appending
             it to rt.code. Instead of {p2} if may appear a if (...). */
-        // in turn, {} may be omitted.
         if (tl[0].s == "if") {
             tl.shift();
             sjs_compile_if(tl, rt, tl[0]);
         } else {
-            sjs_compile(rt,[rt.PUSHENV], tl[0]);
             rt.code = rt.code.concat(sjs_compile_block(tl).code);
-            sjs_compile(rt,[rt.POPENV], tl[0]);
         }
         // The if (c) {p1} else {p2} has been compiled: let JP jump here.
         rt.code[after].i = rt.code.length - after;
     }
+    sjs_compile(rt,[rt.POPENV], tl[0]);
 };
 
 /** Compile a "let x1 = v1,...,xn=vn;" instruction from tl at rt.
@@ -643,17 +655,6 @@ let sjs_compile_block = function(tl)
 let sjs_run = function(rt, debug)
 {
     // rt.env.$_outer_$ = environment at outer scope.
-    /*  The initial environment is empty: built-in objects are stored in
-        its outer environment. */
-    //~ rt.env = {$_outer_$: {alert: alert,
-                          //~ Array: Array,
-                          //~ console: console,
-                          //~ Math: Math,
-                          //~ Number: Number,
-                          //~ Object: Object,
-                          //~ prompt: prompt,
-                          //~ String: String, //{prototype: {includes: String.prototype.includes}},
-                          //~ $_outer_$: null}};
     /*  The outmost scope is the window object of the JS engine executing
         executing the compiler ;-). */
     rt.env = { $_outer_$: window };
@@ -727,8 +728,13 @@ let sjs_runtime = function()
         return v;
     };
     
-    //  VM INSTRUCTION IMPLEMENTATION
+    /*
+        VM INSTRUCTION IMPLEMENTATIONS
     
+        Notice that they have rt as parameter: indeed it may be different
+        from the rt defined in this function rt_runtime().
+    */
+
     /// ADD() pop y, pop x, push x + y
     rt.ADD = function(rt) {
         let y = rt.popval();
@@ -742,12 +748,7 @@ let sjs_runtime = function()
         let f = rt.popval();
         
         if (f && f.apply) { // Native JS function
-            // functions without this
-            //~ if (f == alert || f == prompt) {
-                //~ rt.stack.push(f.apply(undefined, a));
-            //~ } else {
-                rt.stack.push(f.apply(rt.$_this_$, a));
-            //~ }
+            rt.stack.push(f.apply(rt.$_this_$, a));
         } else {
             /*  User defined function: saves rt.env, rt.code, rt.ic on the
                 dump stack, next set rt.env to the closure environment, rc.code
@@ -1119,7 +1120,6 @@ let sjs_runtime = function()
     
     return rt;
 };
-
 
 let tl = sjs_scan("alert(1+2*3);");
 console.log(tl);
