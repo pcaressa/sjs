@@ -1,6 +1,3 @@
-// CANCELLARE CON CTRL-Z FINO A FAR SCOMPARIRE QUESTO PER VERSIONE PRECEDENTE
-
-
 /// \file S.js - Self Javascript
 
 "use strict";
