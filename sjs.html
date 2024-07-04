@@ -64,7 +64,7 @@ function compile() {
     w.document.write("<h1>Compiled Code</h1><table>");
     for (let i = 0; i < run_time.code.length; ++ i) {
         w.document.write("<code>[" + i + "|" + run_time.code[i].l + ":" + run_time.code[i].c + "] ");
-        if (run_time.code[i] && run_time.code[i].i.$name) {
+        if (run_time.code[i].i && run_time.code[i].i.$name) {
             w.document.write(run_time.code[i].i.$name);
         } else {
             w.document.write(sjs_object2string(run_time.code[i].i));
