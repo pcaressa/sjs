@@ -58,19 +58,30 @@
 <script>
 
 function compile() {
+    let show_code = function(code, indent) {
+        for (let i = 0; i < code.length; ++ i) {
+            w.document.write("<code>" + "&nbsp;".repeat(indent) + "[" + i + "|" + code[i].l + ":" + code[i].c + "] ");
+            if (code[i].i && code[i].i.$name) {
+                if (code[i].i.$name == "CLOSURE") {
+                    w.document.write("BEGIN CLOSURE(" + sjs_object2string(code[i+1].i) + ")</code><br>");
+                    show_code(code[i+2].i, indent + 4);
+                    w.document.write("<code>" + "&nbsp;".repeat(indent) + "[" + i + "|" + code[i].l + ":" + code[i].c);
+                    w.document.write("] END CLOSURE");
+                    i += 2;
+                } else {
+                    w.document.write(code[i].i.$name);
+            }} else {
+                w.document.write(sjs_object2string(code[i].i));
+            }
+            w.document.write("</code></br>");
+        }
+    };
     let run_time = sjs_compile_block(sjs_scan(document.getElementsByTagName("textarea").textarea.value));
     console.log(run_time);
     let w = window.open("/", "Compiled Code");
-    w.document.write("<h1>Compiled Code</h1><table>");
-    for (let i = 0; i < run_time.code.length; ++ i) {
-        w.document.write("<code>[" + i + "|" + run_time.code[i].l + ":" + run_time.code[i].c + "] ");
-        if (run_time.code[i].i && run_time.code[i].i.$name) {
-            w.document.write(run_time.code[i].i.$name);
-        } else {
-            w.document.write(sjs_object2string(run_time.code[i].i));
-        }
-        w.document.write("</code></br>");
-}}
+    w.document.write("<h1>Compiled Code</h1>");
+    show_code(run_time.code, 0);
+}
 
 function execute(debug) {
     console.log("Debug: " + debug);
