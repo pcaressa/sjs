@@ -512,7 +512,6 @@ let sjs_compile_if = function(tl, rt)
             c JPZ other p1 other: */
     // Compile the (c) condition
     sjs_expected(tl.shift(), "(");
-    sjs_compile(rt,[rt.PUSHENV], tl[0]);
     sjs_expected(sjs_compile_expression(tl, rt), ")");
     /*  Now compile a JPZ to the first instruction after the if:
         that'll be determined after compiling the if-else, so we keep
@@ -521,7 +520,9 @@ let sjs_compile_if = function(tl, rt)
     let other = rt.code.length + 1; // index of 0 in the following s
     sjs_compile(rt, [rt.JPZ, 0], tl[0]);   // 0 to be overwritten later!
     // Now compile {p1} appending it to rt.code
+    sjs_compile(rt,[rt.PUSHENV], tl[0]);
     rt.code = rt.code.concat(sjs_compile_block(tl).code);
+    sjs_compile(rt,[rt.POPENV], tl[0]);
     if (tl[0].s != "else") {
         // The if (c) {p1} has been compiled: let JPZ jump here.
         rt.code[other].i = rt.code.length - other;
@@ -537,12 +538,13 @@ let sjs_compile_if = function(tl, rt)
             tl.shift();
             sjs_compile_if(tl, rt, tl[0]);
         } else {
+            sjs_compile(rt,[rt.PUSHENV], tl[0]);
             rt.code = rt.code.concat(sjs_compile_block(tl).code);
+            sjs_compile(rt,[rt.POPENV], tl[0]);
         }
         // The if (c) {p1} else {p2} has been compiled: let JP jump here.
         rt.code[after].i = rt.code.length - after;
     }
-    sjs_compile(rt,[rt.POPENV], tl[0]);
 };
 
 /** Compile a "let x1 = v1,...,xn=vn;" instruction from tl at rt.
@@ -684,9 +686,9 @@ let sjs_execute = function(code, rt)
             console.log(stackdump(rt));
             console.log("this = " + sjs_object2string(rt.$_this_$));
             if (rt.code[ic].i.$name) {
-                console.log("[" + ic + "] " + rt.code[ic].i.$name);
+                console.log("[" + ic + "|" + rt.code[ic].l + ":" + rt.code[ic].c + "] " + rt.code[ic].i.$name);
             } else {
-                console.log("[" + ic + "] " + rt.code[ic].i);
+                console.log("[" + ic + "|" + rt.code[ic].l + ":" + rt.code[ic].c + "] " + rt.code[ic].i);
         }}
         rt.code[ic].i(rt);
     }
@@ -1112,6 +1114,7 @@ let sjs_runtime = function()
     
     return rt;
 };
+
 
 let tl = sjs_scan("alert(1+2*3);");
 console.log(tl);
