@@ -237,24 +237,16 @@ let sjs_compile_object = function(tl, rt)
 let sjs_compile_function = function(tl, rt)
 {
     /*  A function(params) { body} is compiled as a sequence of three values:
-        [CLOSURE(), params, length, ...].
+        [CLOSURE(), params, body] where
     
         - CLOSURE is the function to be executed at runtime to create the
             closure and push it on the stack.
         - params is the array [x1,...,xn] of formal parameters
-        - length is the number of items taken by the closure body, compiled
-            after length.
-        - ... is the compiled code of the closure body
+        - body is an array containing the compiled code of the closure body
         
         During runtime, the CLOSURE instruction creates a new environment,
         inserts into it the formal parameters as variables whose initial
-        values are actual parameters and execute the closure body. Before
-        doing that, the rt.ic value is increased by length, so to point to
-        the first item after the closure body, so that the control will
-        resume from there. */
-
-
-TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO 
+        values are actual parameters and execute the closure body. */
 
     // Parameters.
     let token = tl.shift();
