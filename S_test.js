@@ -263,7 +263,13 @@ let sjs_compile_function = function(tl, rt)
             sjs_expected(token, ")");
     }}
     // Function's body
-    sjs_compile(rt, [rt.CLOSURE, parameters, sjs_compile_block(tl).code], token);
+    let body = sjs_compile_block(tl).code;
+    if (body[body.length - 1].i != rt.RET) {
+        body.push({i: rt.PUSH, l: tl[0].l, c: tl[0].c});
+        body.push({i: undefined, l: tl[0].l, c: tl[0].c});
+        body.push({i: rt.RET, l: tl[0].l, c: tl[0].c});
+    }
+    sjs_compile(rt, [rt.CLOSURE, parameters, body], token);
 };
 
 /** Compile an operand into rt.code parsing it from the token list tl, which is
@@ -1114,7 +1120,6 @@ let sjs_runtime = function()
     
     return rt;
 };
-
 
 let tl = sjs_scan("alert(1+2*3);");
 console.log(tl);
