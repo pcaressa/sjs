@@ -58,7 +58,7 @@
 <script>
 
 function compile() {
-    let show_code = function(code, indent) {
+    function show_code(code, indent) {
         for (let i = 0; i < code.length; ++ i) {
             w.document.write("<code>" + "&nbsp;".repeat(indent) + "[" + i + "|" + code[i].l + ":" + code[i].c + "] ");
             if (code[i].i && code[i].i.$name) {
@@ -76,7 +76,7 @@ function compile() {
             w.document.write("</code></br>");
         }
     };
-    let run_time = sjs_compile_block(sjs_scan(document.getElementsByTagName("textarea").textarea.value));
+    let run_time = sjs_compile(sjs_scan(document.getElementsByTagName("textarea").textarea.value));
     console.log(run_time);
     let w = window.open("/", "Compiled Code");
     w.document.write("<h1>Compiled Code</h1>");
@@ -85,7 +85,7 @@ function compile() {
 
 function execute(debug) {
     console.log("Debug: " + debug);
-    sjs_run(sjs_compile_block(sjs_scan(document.getElementsByTagName("textarea").textarea.value)), debug);
+    sjs_run(sjs_compile(sjs_scan(document.getElementsByTagName("textarea").textarea.value)), debug);
 }
 
 function load(input) {
