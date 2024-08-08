@@ -1,5 +1,3 @@
-/// \file S.js - Self Javascript
-
 "use strict";
 
 /* _________________________________________________________________________
@@ -51,10 +49,13 @@ let sjs_object2string = function(o) {
                     s = "{ ";
                     for (let x in o) {
                         // Prevent some possible infinite loop
-                        if (x != "$_ref_$" && x != "env" && x != "$_outer_$") {
-                            s += x + ":" + sjs_object2string(o[x]) + " ";
-                        } else {
+                        //~ if (x != "$_ref_$" && x != "env" && x != "$_outer_$") {
+                            //~ s += x + ":" + sjs_object2string(o[x]) + " ";
+                        //~ } else {
+                        if (typeof(o[x]) == "object") {
                             s += x + ":{...} ";
+                        } else {
+                            s += x + ":" + sjs_object2string(o[x]) + " ";
                     }}
                     s += "}";
     }}}}
@@ -327,22 +328,25 @@ let sjs_compile_operand = function(token, tl, rt)
     // Check against literal objects
     else if (token.t == "function") { sjs_compile_function(tl, rt); }
     else if (token.t == "{") {
-        sjs_compile_code(rt, [rt.PUSHTHIS], token);
+        //~ sjs_compile_code(rt, [rt.PUSHTHIS], token);
         sjs_compile_object(tl, rt);
-        sjs_compile_code(rt, [rt.POPTHIS], token);
+        //~ sjs_compile_code(rt, [rt.POPTHIS], token);
     }
     else if (token.t == "[") {
-        sjs_compile_code(rt, [rt.PUSHTHIS], token);
+        //~ sjs_compile_code(rt, [rt.PUSHTHIS], token);
         sjs_compile_array(tl, rt, "]");
-        sjs_compile_code(rt, [rt.POPTHIS], token);
+        //~ sjs_compile_code(rt, [rt.POPTHIS], token);
     }
     // Check against variable names
     else if (token.t == "name") { sjs_compile_code(rt, [rt.REF, token.s], token); }
     // If all else fails, we expect a subexpression "(expr)"
     else if (token.t == "(") {
-        sjs_compile_code(rt, [rt.PUSHTHIS], token);
+        //~ sjs_compile_code(rt, [rt.PUSHTHIS], token);
         sjs_expected(sjs_compile_expression(tl, rt), ")");
-        sjs_compile_code(rt, [rt.POPTHIS], token);
+        //~ sjs_compile_code(rt, [rt.POPTHIS], token);
+    }
+    else if (token.t == "this") {
+        sjs_compile_code(rt, [rt.THIS], token);
     }
     else { sjs_error(true, "Syntax error: " + token.s, token); }
     return tl.shift();
@@ -724,6 +728,7 @@ let sjs_run = function(rt, debug)
     rt.stack = [];
     rt.dump = [];
     rt.debug = debug;
+    //~ rt.$_this_$ = rt.env.$_outer_$;
     rt.$_this_$ = undefined;
     sjs_execute(rt.code, rt);
 };
@@ -783,7 +788,7 @@ let sjs_runtime = function()
         else return v. */
     rt.popval = function() {
         let v = rt.stack.pop();
-        if (v && v.$_ref_$) {   // reference
+        if (v && v.$_ref_$ && v.$_at_$) {   // reference
             v = v.$_ref_$[v.$_at_$];
         }
         return v;
@@ -809,7 +814,12 @@ let sjs_runtime = function()
         let f = rt.popval();
         
         if (f && f.apply) { // Native JS function
-            rt.stack.push(f.apply(rt.$_this_$, a));
+            // If the function is native then we check for its name as key of the in $_this_$
+            if (rt.$_this_$ && f.name in rt.$_this_$.__proto__) {
+                rt.stack.push(f.apply(rt.$_this_$, a));
+            } else {
+                rt.stack.push(f.apply(null, a));
+            }
         } else {
             /*  User defined function: saves rt.env, rt.code, rt.ic on the
                 dump stack, next set rt.env to the closure environment, rc.code
@@ -880,14 +890,16 @@ let sjs_runtime = function()
     rt.DEREF = function(rt) {
         let i = rt.popval();
         let r = rt.stack.pop();
-        if (r["$_ref_$"]) { // reference?
+        if (r && r.$_ref_$ && r.$_at_$) { // reference?
             /* Notice: we have r = {ref:e, at:s} and we want to change
                 it int {ref:e[s], at:i}. */
             r = {$_ref_$:r.$_ref_$[r.$_at_$], $_at_$:i};
             rt.$_this_$ = r.$_ref_$;
-        } else if (r[i]) {  // object?
+        } else if (r && r[i]) {  // object?
             r = {$_ref_$: r, $_at_$:i};
-            rt.$_this_$ = r.$_ref_$;
+            //~ if (typeof(r[i]) == "object") {
+                rt.$_this_$ = r.$_ref_$;
+            //~ }
         } else {
             r = undefined;
             rt.$_this_$ = undefined;
@@ -1049,6 +1061,7 @@ let sjs_runtime = function()
         let v = rt.popval();
         let n = rt.popval();
         let a = rt.popval();
+//~ console.log(a + "[" + n + "] = " + v);
         a[n] = v;
         rt.stack.push(a);
     };
@@ -1174,6 +1187,10 @@ let sjs_runtime = function()
         rt.stack.push(y);
     };
     rt.SWAP.$name = "SWAP";
+    
+    /// push rt.$_this_$
+    rt.THIS = function(rt) { rt.stack.push(rt.$_this_$); };
+    rt.THIS.$name = "THIS";
 
     /// pop x, throw exception x
     rt.THROW = function(rt) { throw rt.popval(); };
