@@ -6,7 +6,7 @@
 
 S.js (Self JavaScript) is a didactic compiler/interpreter for a classic subset of JavaScript, written in JavaScript itself, namely in the subset it implements, so that S.js can compile itself.
 
-The project was the subject of my talk at the first *Coderful* conference held in Catania (28th june 2024), slide [Coderful_2024_Paolo.pdf](Coderful_2024_Paolo.pdf). More recent slides of the same talk, held in september 2024 @ JR Roma meetup are: [JS Roma 2024.pdf](JS Roma 2024.pdf).
+The project was the subject of my talk at the first *Coderful* conference held in Catania (28th june 2024), slide [Coderful_2024_Paolo.pdf](Coderful_2024_Paolo.pdf). More recent slides of the same talk, held in september 2024 @ JR Roma meetup are: [JS_Roma_2024.pdf](JS_Roma_2024.pdf).
 
 Although being a quite useless projects, as typical of mine, this program features some classic techniques that may be worth to know and to use elsewhere.
 
