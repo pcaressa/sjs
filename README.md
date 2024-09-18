@@ -157,6 +157,8 @@ You can also use the `false`, `true`, `null`, `undefined` and `this` objects wit
 
 ## The compiler
 
+**WARNING** from now on this document is still work in progress.
+
 The S.js compiler is a single file containing a bunch of functions arranged in three groups:
 
 - lexical analysis functions;
