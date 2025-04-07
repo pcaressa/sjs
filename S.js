@@ -1045,8 +1045,9 @@ let sjs_runtime = function()
     
     /// pop a, pop f, push new f(a).
     rt.NEW = function(rt) {
+        // This is probably bugged.
         rt.$_this_$ = Object({});
-        rt.APPLY();
+        rt.$_this_$ = rt.popval();
         rt.stack.push(rt.$_this_$);
         rt.$_this_$ = undefined;
     };
